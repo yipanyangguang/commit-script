@@ -1,0 +1,237 @@
+use std::process::Command;
+use std::path::Path;
+use std::fs;
+use std::collections::{HashMap, BTreeMap, HashSet};
+use serde::{Serialize, Deserialize};
+use std::io::Write;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CommitInfo {
+    date: String,
+    hash: String,
+    author: String,
+    message: String,
+    branch: String,
+    repo_name: String,
+}
+
+#[tauri::command]
+fn check_git_repo(path: String) -> bool {
+    let git_path = Path::new(&path).join(".git");
+    git_path.exists()
+}
+
+#[tauri::command]
+async fn get_commits(repo_paths: Vec<String>, start_date: String, end_date: String) -> Result<Vec<CommitInfo>, String> {
+    let mut all_commits = Vec::new();
+
+    for repo_path in repo_paths {
+        let path = Path::new(&repo_path);
+        let repo_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        
+        // 1. git log
+        let commit_delimiter = "^^^^^COMMIT^^^^^";
+        let log_args = [
+            "log",
+            "--all",
+            &format!("--since={} 00:00:00", start_date),
+            &format!("--until={} 23:59:59", end_date),
+            "--no-merges",
+            "--date=format:%Y-%m-%d",
+            &format!("--pretty=format:%ad|||%H|||%an|||%B{}", commit_delimiter),
+        ];
+
+        let output = Command::new("git")
+            .args(&log_args)
+            .current_dir(&repo_path)
+            .output()
+            .map_err(|e| format!("Failed to execute git log in {}: {}", repo_name, e))?;
+
+        if !output.status.success() {
+            println!("Git log failed for {}: {:?}", repo_name, String::from_utf8_lossy(&output.stderr));
+            continue;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let raw_commits: Vec<&str> = stdout.split(commit_delimiter).collect();
+        
+        let mut commits = Vec::new();
+        let mut hashes = Vec::new();
+
+        for block in raw_commits {
+            if block.trim().is_empty() { continue; }
+            let parts: Vec<&str> = block.split("|||").collect();
+            if parts.len() >= 4 {
+                let date = parts[0].trim().to_string();
+                let hash = parts[1].trim().to_string();
+                let author = parts[2].trim().to_string();
+                let message = parts[3..].join("|||").trim().to_string();
+                
+                commits.push(CommitInfo {
+                    date,
+                    hash: hash.clone(),
+                    author,
+                    message,
+                    branch: "Unknown".to_string(),
+                    repo_name: repo_name.clone(),
+                });
+                hashes.push(hash);
+            }
+        }
+
+        // 2. git name-rev
+        if !hashes.is_empty() {
+            let mut child = Command::new("git")
+                .args(&["name-rev", "--stdin", "--refs=refs/heads/*", "--refs=refs/remotes/*"])
+                .current_dir(&repo_path)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("Failed to spawn git name-rev: {}", e))?;
+
+            if let Some(mut stdin) = child.stdin.take() {
+                let input = hashes.join("\n");
+                let _ = stdin.write_all(input.as_bytes());
+            }
+
+            let output = child.wait_with_output().map_err(|e| format!("Failed to wait for git name-rev: {}", e))?;
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            
+            let mut branch_map = HashMap::new();
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let hash = parts[0];
+                    let branch_raw = parts[1]; 
+                    let branch = branch_raw.trim_matches(|c| c == '(' || c == ')');
+                    let branch = branch.replace("remotes/origin/", "")
+                                     .replace("remotes/", "");
+                    let branch = branch.split(&['~', '^'][..]).next().unwrap_or("").to_string();
+                    
+                    branch_map.insert(hash.to_string(), branch);
+                }
+            }
+
+            for commit in &mut commits {
+                if let Some(branch) = branch_map.get(&commit.hash) {
+                    commit.branch = branch.clone();
+                }
+            }
+        }
+        
+        all_commits.extend(commits);
+    }
+
+    Ok(all_commits)
+}
+
+fn format_date_range(start: &str, end: &str) -> String {
+    let start_parts: Vec<&str> = start.split('-').collect();
+    let end_parts: Vec<&str> = end.split('-').collect();
+    
+    if start_parts.len() == 3 && end_parts.len() == 3 {
+        if start_parts[0] == end_parts[0] {
+            if start_parts[1] == end_parts[1] {
+                return format!("{}~{}", start, end_parts[2]);
+            }
+            return format!("{}~{}-{}", start, end_parts[1], end_parts[2]);
+        }
+    }
+    format!("{}~{}", start, end)
+}
+
+fn generate_report_content(commits: &[CommitInfo], author: &str, start: &str, end: &str, is_total: bool) -> String {
+    let mut output = String::new();
+    if is_total {
+        output.push_str("汇总报告 (所有作者)\n");
+    } else {
+        output.push_str(&format!("作者: {}\n", author));
+    }
+    output.push_str(&format!("时间范围: {} 至 {}\n", start, end));
+    output.push_str("----------------------------------------\n\n");
+
+    let mut aggregated: BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<String>>>> = BTreeMap::new();
+
+    for commit in commits {
+        aggregated
+            .entry(commit.date.clone()).or_default()
+            .entry(commit.repo_name.clone()).or_default()
+            .entry(commit.branch.clone()).or_default()
+            .push(commit.message.clone());
+    }
+
+    for (date, repos) in aggregated {
+        output.push_str(&format!("【{}】\n", date));
+        for (repo, branches) in repos {
+            output.push_str(&format!("  📂 项目: {}\n", repo));
+            for (branch, messages) in branches {
+                output.push_str(&format!("    🌿 分支: {}\n", branch));
+                for (i, msg) in messages.iter().enumerate() {
+                    let lines: Vec<&str> = msg.lines().collect();
+                    if !lines.is_empty() {
+                        output.push_str(&format!("      {}. {}\n", i + 1, lines[0]));
+                        for line in &lines[1..] {
+                            output.push_str(&format!("         {}\n", line));
+                        }
+                    }
+                }
+                output.push_str("\n");
+            }
+        }
+        output.push_str("\n");
+    }
+
+    output
+}
+
+#[tauri::command]
+async fn export_report(commits: Vec<CommitInfo>, export_path: String, start_date: String, end_date: String) -> Result<(), String> {
+    let mut commits_by_author: HashMap<String, Vec<CommitInfo>> = HashMap::new();
+    for commit in &commits {
+        commits_by_author.entry(commit.author.clone()).or_default().push(commit.clone());
+    }
+
+    let output_dir = Path::new(&export_path).join(format!("{}~{}", start_date, end_date));
+    fs::create_dir_all(&output_dir).map_err(|e| format!("Failed to create dir: {}", e))?;
+
+    for (author, author_commits) in &commits_by_author {
+        let content = generate_report_content(author_commits, author, &start_date, &end_date, false);
+        let unique_repos: HashSet<_> = author_commits.iter().map(|c| &c.repo_name).collect();
+        let repo_label = if unique_repos.len() > 1 {
+            "AllProjects".to_string()
+        } else {
+            unique_repos.iter().next().map(|s| s.to_string()).unwrap_or_else(|| "Unknown".to_string())
+        };
+
+        let filename = format!("{}-{}-{}.txt", author, format_date_range(&start_date, &end_date), repo_label);
+        let file_path = output_dir.join(filename);
+        fs::write(file_path, content).map_err(|e| format!("Failed to write file: {}", e))?;
+    }
+
+    let total_content = generate_report_content(&commits, "ALL", &start_date, &end_date, true);
+    let unique_repos: HashSet<_> = commits.iter().map(|c| &c.repo_name).collect();
+    let total_repo_label = if unique_repos.len() > 1 {
+        "AllProjects".to_string()
+    } else {
+        unique_repos.iter().next().map(|s| s.to_string()).unwrap_or_else(|| "Unknown".to_string())
+    };
+    let total_filename = format!("TOTAL-{}-{}.txt", format_date_range(&start_date, &end_date), total_repo_label);
+    let total_file_path = output_dir.join(total_filename);
+    fs::write(total_file_path, total_content).map_err(|e| format!("Failed to write total file: {}", e))?;
+
+    Ok(())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

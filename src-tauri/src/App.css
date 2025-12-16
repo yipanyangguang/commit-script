@@ -1,0 +1,19 @@
+.container {
+  padding: 20px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+}
+
+.tab-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 0;
+}
+
+/* Ensure Ant Design styles work well */
+body {
+  margin: 0;
+  background-color: #ffffff;
+}

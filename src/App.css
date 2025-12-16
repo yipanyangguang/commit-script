@@ -1,0 +1,46 @@
+.container {
+  padding: 20px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  overflow: hidden;
+}
+
+/* Customize Ant Design Tabs to fill height */
+.ant-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Ensure the content holder takes up remaining space */
+.ant-tabs-content-holder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ant-tabs-content {
+  flex: 1;
+  height: 100%;
+}
+
+.ant-tabs-tabpane {
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 4px; /* Space for scrollbar */
+}
+
+.tab-content {
+  padding: 10px 0 20px 0;
+}
+
+/* Ensure Ant Design styles work well */
+body {
+  margin: 0;
+  background-color: #ffffff;
+  overflow: hidden;
+}
