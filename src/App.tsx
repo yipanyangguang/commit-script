@@ -12,26 +12,70 @@ import { DateConfig } from "./components/DateConfig";
 import { AuthorConfig } from "./components/AuthorConfig";
 import { PreviewExport } from "./components/PreviewExport";
 import { About } from "./components/About";
-import type { CommitInfo } from "./types";
+import type { CommitInfo, RepoGroup, RepoItem } from "./types";
 
 const { Title } = Typography;
+
+function generateId() {
+  return Math.random().toString(36).substr(2, 9);
+}
 
 function App() {
   // State
   const [activeTab, setActiveTab] = useState("1");
-  const [repoPaths, setRepoPaths] = useState<string[]>(() => {
-    const saved = localStorage.getItem("repoPaths");
-    try {
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error("Failed to parse repoPaths", e);
-      return [];
+  const [repoGroups, setRepoGroups] = useState<RepoGroup[]>(() => {
+    const saved = localStorage.getItem("repoGroups");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse repoGroups", e);
+      }
     }
+
+    // Migration from old repoPaths
+    const oldSaved = localStorage.getItem("repoPaths");
+    if (oldSaved) {
+      try {
+        const parsed = JSON.parse(oldSaved);
+        let initialRepos: RepoItem[] = [];
+        if (Array.isArray(parsed)) {
+          if (parsed.length > 0 && typeof parsed[0] === "string") {
+            initialRepos = parsed.map((path: string) => ({
+              path,
+            }));
+          } else {
+            initialRepos = parsed;
+          }
+        }
+        if (initialRepos.length > 0) {
+          return [
+            {
+              id: "default",
+              name: "默认分组",
+              selected: true,
+              repos: initialRepos,
+            },
+          ];
+        }
+      } catch (e) {
+        console.error("Failed to parse old repoPaths", e);
+      }
+    }
+
+    return [
+      {
+        id: "default",
+        name: "默认分组",
+        selected: true,
+        repos: [],
+      },
+    ];
   });
 
   useEffect(() => {
-    localStorage.setItem("repoPaths", JSON.stringify(repoPaths));
-  }, [repoPaths]);
+    localStorage.setItem("repoGroups", JSON.stringify(repoGroups));
+  }, [repoGroups]);
 
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
     dayjs().startOf("week").add(1, "day"), // Monday
@@ -47,7 +91,7 @@ function App() {
   const [previewRepo, setPreviewRepo] = useState<string>("all");
 
   // Actions
-  async function addRepo() {
+  async function addRepo(groupId: string) {
     const selected = await open({
       directory: true,
       multiple: true,
@@ -68,17 +112,72 @@ function App() {
         }
       }
 
-      setRepoPaths((prev: string[]) => [...new Set([...prev, ...validPaths])]);
+      setRepoGroups((prev) => {
+        return prev.map((group) => {
+          if (group.id === groupId) {
+            const newItems = validPaths.map((path) => ({
+              path,
+            }));
+            const existingPaths = new Set(group.repos.map((item) => item.path));
+            const uniqueNewItems = newItems.filter(
+              (item) => !existingPaths.has(item.path)
+            );
+            return { ...group, repos: [...group.repos, ...uniqueNewItems] };
+          }
+          return group;
+        });
+      });
     }
   }
 
-  function removeRepo(path: string) {
-    setRepoPaths((prev: string[]) => prev.filter((p: string) => p !== path));
+  function removeRepo(groupId: string, path: string) {
+    setRepoGroups((prev) =>
+      prev.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              repos: group.repos.filter((item) => item.path !== path),
+            }
+          : group
+      )
+    );
+  }
+
+  function addGroup() {
+    setRepoGroups((prev) => [
+      ...prev,
+      {
+        id: generateId(),
+        name: "新分组",
+        selected: true,
+        repos: [],
+      },
+    ]);
+  }
+
+  function removeGroup(groupId: string) {
+    setRepoGroups((prev) => prev.filter((g) => g.id !== groupId));
+  }
+
+  function renameGroup(groupId: string, name: string) {
+    setRepoGroups((prev) =>
+      prev.map((g) => (g.id === groupId ? { ...g, name } : g))
+    );
+  }
+
+  function toggleGroup(groupId: string, checked: boolean) {
+    setRepoGroups((prev) =>
+      prev.map((g) => (g.id === groupId ? { ...g, selected: checked } : g))
+    );
   }
 
   async function startAnalysis() {
-    if (repoPaths.length === 0) {
-      message.error("请至少添加一个仓库。");
+    const selectedRepos = repoGroups
+      .filter((g) => g.selected)
+      .flatMap((g) => g.repos.map((r) => r.path));
+
+    if (selectedRepos.length === 0) {
+      message.error("请至少选择一个仓库。");
       return;
     }
     if (!dateRange || !dateRange[0] || !dateRange[1]) {
@@ -93,7 +192,7 @@ function App() {
     setLoading(true);
     try {
       const result = await invoke<CommitInfo[]>("get_commits", {
-        repoPaths,
+        repoPaths: selectedRepos,
         startDate: dateRange[0].format("YYYY-MM-DD"),
         endDate: dateRange[1].format("YYYY-MM-DD"),
       });
@@ -159,9 +258,13 @@ function App() {
       label: "项目配置",
       children: (
         <RepoConfig
-          repoPaths={repoPaths}
+          repoGroups={repoGroups}
           addRepo={addRepo}
           removeRepo={removeRepo}
+          addGroup={addGroup}
+          removeGroup={removeGroup}
+          renameGroup={renameGroup}
+          toggleGroup={toggleGroup}
         />
       ),
     },
