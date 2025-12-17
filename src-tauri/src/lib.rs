@@ -16,6 +16,23 @@ pub struct CommitInfo {
 }
 
 #[tauri::command]
+async fn git_fetch(repo_path: String) -> Result<(), String> {
+    let path = Path::new(&repo_path);
+    let repo_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    
+    let output = Command::new("git")
+        .args(&["fetch", "--all"])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to execute git fetch --all in {}: {}", repo_name, e))?;
+
+    if !output.status.success() {
+        return Err(format!("Git fetch failed for {}: {}", repo_name, String::from_utf8_lossy(&output.stderr)));
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn check_git_repo(path: String) -> bool {
     let git_path = Path::new(&path).join(".git");
     git_path.exists()
@@ -231,7 +248,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report])
+        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

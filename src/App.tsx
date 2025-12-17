@@ -190,7 +190,21 @@ function App() {
     }
 
     setLoading(true);
+    const msgKey = "analysis_process";
     try {
+      message.loading({ content: "正在拉取最新代码...", key: msgKey, duration: 0 });
+
+      await Promise.all(
+        selectedRepos.map((repoPath) =>
+          invoke("git_fetch", { repoPath }).catch((e) => {
+            console.warn(`Fetch failed for ${repoPath}: ${e}`);
+            message.warning(`无法拉取 ${repoPath}，将使用本地数据。`);
+          })
+        )
+      );
+
+      message.loading({ content: "正在分析提交记录...", key: msgKey, duration: 0 });
+
       const result = await invoke<CommitInfo[]>("get_commits", {
         repoPaths: selectedRepos,
         startDate: dateRange[0].format("YYYY-MM-DD"),
@@ -205,10 +219,10 @@ function App() {
       }
 
       setCommits(filtered);
-      message.success(`分析完成，共找到 ${filtered.length} 条提交记录。`);
+      message.success({ content: `分析完成，共找到 ${filtered.length} 条提交记录。`, key: msgKey, duration: 2 });
       setActiveTab("4"); // Switch to Preview tab
     } catch (e) {
-      message.error(`分析失败: ${e}`);
+      message.error({ content: `分析失败: ${e}`, key: msgKey, duration: 3 });
     } finally {
       setLoading(false);
     }
