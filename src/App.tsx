@@ -8,8 +8,7 @@ import type { Dayjs } from "dayjs";
 import "./App.css";
 
 import { RepoConfig } from "./components/RepoConfig";
-import { DateConfig } from "./components/DateConfig";
-import { AuthorConfig } from "./components/AuthorConfig";
+import { BasicConfig } from "./components/BasicConfig";
 import { PreviewExport } from "./components/PreviewExport";
 import { About } from "./components/About";
 import type { CommitInfo, RepoGroup, RepoItem } from "./types";
@@ -77,44 +76,34 @@ function App() {
     localStorage.setItem("repoGroups", JSON.stringify(repoGroups));
   }, [repoGroups]);
 
-  // Check updates on mount, when repos change, or when switching to config tab
-  useEffect(() => {
-    if (activeTab !== "1") return; // Only check when on config tab (or initial load if default)
+  async function checkAllReposStatus() {
+    setCheckingStatus(true);
+    const newGroups = [...repoGroups];
+    let changed = false;
 
-    const checkUpdates = async () => {
-      const newGroups = [...repoGroups];
-      let changed = false;
-
-      for (const group of newGroups) {
-        for (const repo of group.repos) {
-          // Only check if not checked recently (e.g., within 5 minutes)
-          const now = Date.now();
-          if (!repo.lastChecked || now - repo.lastChecked > 5 * 60 * 1000) {
-            try {
-              const hasUpdates = await invoke<boolean>("git_check_updates", {
-                repoPath: repo.path,
-              });
-              if (repo.hasUpdates !== hasUpdates) {
-                repo.hasUpdates = hasUpdates;
-                repo.lastChecked = now;
-                changed = true;
-              }
-            } catch (e) {
-              console.warn(`Check updates failed for ${repo.path}:`, e);
-            }
+    for (const group of newGroups) {
+      for (const repo of group.repos) {
+        try {
+          const hasUpdates = await invoke<boolean>("git_check_updates", {
+            repoPath: repo.path,
+          });
+          if (repo.hasUpdates !== hasUpdates) {
+            repo.hasUpdates = hasUpdates;
+            repo.lastChecked = Date.now();
+            changed = true;
           }
+        } catch (e) {
+          console.warn(`Check updates failed for ${repo.path}:`, e);
         }
       }
+    }
 
-      if (changed) {
-        setRepoGroups(newGroups);
-      }
-    };
-
-    // Debounce check to avoid too many calls
-    const timer = setTimeout(checkUpdates, 1000);
-    return () => clearTimeout(timer);
-  }, [repoGroups, activeTab]);
+    if (changed) {
+      setRepoGroups(newGroups);
+    }
+    setCheckingStatus(false);
+    message.success("状态检查完成");
+  }
 
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
     dayjs().startOf("week").add(1, "day"), // Monday
@@ -124,6 +113,7 @@ function App() {
   const [specificAuthor, setSpecificAuthor] = useState("");
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
 
   // Preview Filters
   const [previewAuthor, setPreviewAuthor] = useState<string>("all");
@@ -402,21 +392,18 @@ function App() {
           renameGroup={renameGroup}
           toggleGroup={toggleGroup}
           updateGroup={updateGroup}
+          checkAllReposStatus={checkAllReposStatus}
+          checkingStatus={checkingStatus}
         />
       ),
     },
     {
       key: "2",
-      label: "时间配置",
+      label: "基本配置",
       children: (
-        <DateConfig dateRange={dateRange} setDateRange={setDateRange} />
-      ),
-    },
-    {
-      key: "3",
-      label: "作者配置",
-      children: (
-        <AuthorConfig
+        <BasicConfig
+          dateRange={dateRange}
+          setDateRange={setDateRange}
           authorMode={authorMode}
           setAuthorMode={setAuthorMode}
           specificAuthor={specificAuthor}

@@ -14,6 +14,8 @@ interface RepoConfigProps {
   renameGroup: (groupId: string, name: string) => void;
   toggleGroup: (groupId: string, checked: boolean) => void;
   updateGroup: (groupId: string) => void;
+  checkAllReposStatus: () => void;
+  checkingStatus: boolean;
 }
 
 export function RepoConfig({
@@ -25,6 +27,8 @@ export function RepoConfig({
   renameGroup,
   toggleGroup,
   updateGroup,
+  checkAllReposStatus,
+  checkingStatus,
 }: RepoConfigProps) {
   // State for editing group name
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
@@ -45,9 +49,14 @@ export function RepoConfig({
   return (
     <div className="tab-content">
       <Space direction="vertical" style={{ width: "100%" }}>
-        <Button type="primary" onClick={addGroup}>
-          新建分组
-        </Button>
+        <Space>
+          <Button type="primary" onClick={addGroup}>
+            新建分组
+          </Button>
+          <Button loading={checkingStatus} onClick={checkAllReposStatus}>
+            获取状态
+          </Button>
+        </Space>
         
         <Collapse defaultActiveKey={repoGroups.map(g => g.id)}>
           {repoGroups.map((group) => (
