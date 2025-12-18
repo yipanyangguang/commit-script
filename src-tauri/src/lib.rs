@@ -33,6 +33,37 @@ async fn git_fetch(repo_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn git_check_updates(repo_path: String) -> Result<bool, String> {
+    let path = Path::new(&repo_path);
+    let repo_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    
+    // 使用 git fetch --dry-run 检查是否有更新
+    // 如果 stderr 有输出，通常意味着有更新（或者有错误，但 dry-run 的输出通常在 stderr）
+    // 更严谨的做法是检查输出内容，但 dry-run 在有更新时会有输出，无更新时通常为空
+    let output = Command::new("git")
+        .args(&["fetch", "--all", "--dry-run"])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to execute git fetch --dry-run in {}: {}", repo_name, e))?;
+
+    if !output.status.success() {
+        return Err(format!("Git check updates failed for {}: {}", repo_name, String::from_utf8_lossy(&output.stderr)));
+    }
+
+    // git fetch --dry-run 的输出通常在 stderr
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // 如果 stderr 不为空，且不包含 "Fetching"，则认为有更新
+    // 注意：不同 git 版本输出可能不同，这里是一个简单的启发式判断
+    // 更好的方式可能是对比 ls-remote，但 dry-run 比较快且简单
+    // 只要有输出（除了 Fetching origin... 这种进度条），就认为有潜在更新
+    
+    // 过滤掉只包含 "Fetching" 的行，看是否还有其他内容
+    let has_updates = stderr.lines().any(|line| !line.trim().starts_with("Fetching"));
+    
+    Ok(has_updates)
+}
+
+#[tauri::command]
 fn check_git_repo(path: String) -> bool {
     let git_path = Path::new(&path).join(".git");
     git_path.exists()
@@ -248,7 +279,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch])
+        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch, git_check_updates])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

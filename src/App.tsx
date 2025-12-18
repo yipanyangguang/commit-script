@@ -77,6 +77,45 @@ function App() {
     localStorage.setItem("repoGroups", JSON.stringify(repoGroups));
   }, [repoGroups]);
 
+  // Check updates on mount, when repos change, or when switching to config tab
+  useEffect(() => {
+    if (activeTab !== "1") return; // Only check when on config tab (or initial load if default)
+
+    const checkUpdates = async () => {
+      const newGroups = [...repoGroups];
+      let changed = false;
+
+      for (const group of newGroups) {
+        for (const repo of group.repos) {
+          // Only check if not checked recently (e.g., within 5 minutes)
+          const now = Date.now();
+          if (!repo.lastChecked || now - repo.lastChecked > 5 * 60 * 1000) {
+            try {
+              const hasUpdates = await invoke<boolean>("git_check_updates", {
+                repoPath: repo.path,
+              });
+              if (repo.hasUpdates !== hasUpdates) {
+                repo.hasUpdates = hasUpdates;
+                repo.lastChecked = now;
+                changed = true;
+              }
+            } catch (e) {
+              console.warn(`Check updates failed for ${repo.path}:`, e);
+            }
+          }
+        }
+      }
+
+      if (changed) {
+        setRepoGroups(newGroups);
+      }
+    };
+
+    // Debounce check to avoid too many calls
+    const timer = setTimeout(checkUpdates, 1000);
+    return () => clearTimeout(timer);
+  }, [repoGroups, activeTab]);
+
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
     dayjs().startOf("week").add(1, "day"), // Monday
     dayjs().endOf("week").add(1, "day"), // Sunday
@@ -159,6 +198,61 @@ function App() {
     setRepoGroups((prev) => prev.filter((g) => g.id !== groupId));
   }
 
+  async function updateGroup(groupId: string) {
+    const group = repoGroups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    const reposToUpdate = group.repos.filter((r) => r.hasUpdates);
+    if (reposToUpdate.length === 0) {
+      message.info("该分组下没有需要更新的仓库。");
+      return;
+    }
+
+    const msgKey = `update_group_${groupId}`;
+    message.loading({ content: "正在更新仓库...", key: msgKey, duration: 0 });
+
+    const fetchedRepos: string[] = [];
+    await Promise.all(
+      reposToUpdate.map((repo) =>
+        invoke("git_fetch", { repoPath: repo.path })
+          .then(() => {
+            fetchedRepos.push(repo.path);
+          })
+          .catch((e) => {
+            console.warn(`Fetch failed for ${repo.path}: ${e}`);
+          })
+      )
+    );
+
+    if (fetchedRepos.length > 0) {
+      setRepoGroups((prev) =>
+        prev.map((g) =>
+          g.id === groupId
+            ? {
+                ...g,
+                repos: g.repos.map((r) =>
+                  fetchedRepos.includes(r.path)
+                    ? { ...r, hasUpdates: false, lastChecked: Date.now() }
+                    : r
+                ),
+              }
+            : g
+        )
+      );
+      message.success({
+        content: `更新完成，成功更新 ${fetchedRepos.length} 个仓库。`,
+        key: msgKey,
+        duration: 2,
+      });
+    } else {
+      message.warning({
+        content: "更新失败，请检查网络或仓库状态。",
+        key: msgKey,
+        duration: 3,
+      });
+    }
+  }
+
   function renameGroup(groupId: string, name: string) {
     setRepoGroups((prev) =>
       prev.map((g) => (g.id === groupId ? { ...g, name } : g))
@@ -192,16 +286,44 @@ function App() {
     setLoading(true);
     const msgKey = "analysis_process";
     try {
-      message.loading({ content: "正在拉取最新代码...", key: msgKey, duration: 0 });
+      message.loading({ content: "正在检查并拉取最新代码...", key: msgKey, duration: 0 });
 
-      await Promise.all(
-        selectedRepos.map((repoPath) =>
-          invoke("git_fetch", { repoPath }).catch((e) => {
-            console.warn(`Fetch failed for ${repoPath}: ${e}`);
-            message.warning(`无法拉取 ${repoPath}，将使用本地数据。`);
-          })
-        )
-      );
+      // Filter repos that need update
+      const reposToFetch = repoGroups
+        .filter((g) => g.selected)
+        .flatMap((g) => g.repos)
+        .filter((r) => selectedRepos.includes(r.path) && r.hasUpdates !== false) // If undefined or true, try fetch
+        .map((r) => r.path);
+
+      if (reposToFetch.length > 0) {
+        const fetchedRepos: string[] = [];
+        await Promise.all(
+          reposToFetch.map((repoPath) =>
+            invoke("git_fetch", { repoPath })
+              .then(() => {
+                fetchedRepos.push(repoPath);
+              })
+              .catch((e) => {
+                console.warn(`Fetch failed for ${repoPath}: ${e}`);
+                message.warning(`无法拉取 ${repoPath}，将使用本地数据。`);
+              })
+          )
+        );
+
+        // Update repo status after fetch
+        if (fetchedRepos.length > 0) {
+          setRepoGroups((prev) =>
+            prev.map((group) => ({
+              ...group,
+              repos: group.repos.map((repo) =>
+                fetchedRepos.includes(repo.path)
+                  ? { ...repo, hasUpdates: false, lastChecked: Date.now() }
+                  : repo
+              ),
+            }))
+          );
+        }
+      }
 
       message.loading({ content: "正在分析提交记录...", key: msgKey, duration: 0 });
 
@@ -279,6 +401,7 @@ function App() {
           removeGroup={removeGroup}
           renameGroup={renameGroup}
           toggleGroup={toggleGroup}
+          updateGroup={updateGroup}
         />
       ),
     },

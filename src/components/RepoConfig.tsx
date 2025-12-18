@@ -13,6 +13,7 @@ interface RepoConfigProps {
   removeGroup: (groupId: string) => void;
   renameGroup: (groupId: string, name: string) => void;
   toggleGroup: (groupId: string, checked: boolean) => void;
+  updateGroup: (groupId: string) => void;
 }
 
 export function RepoConfig({
@@ -23,6 +24,7 @@ export function RepoConfig({
   removeGroup,
   renameGroup,
   toggleGroup,
+  updateGroup,
 }: RepoConfigProps) {
   // State for editing group name
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
@@ -72,6 +74,18 @@ export function RepoConfig({
                       {group.name} <Text type="secondary" style={{ fontSize: 12 }}>(双击重命名)</Text>
                     </span>
                   )}
+                  {group.repos.some((r) => r.hasUpdates) && (
+                    <Button
+                      type="primary"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateGroup(group.id);
+                      }}
+                    >
+                      更新
+                    </Button>
+                  )}
                 </div>
               }
               extra={
@@ -110,7 +124,14 @@ export function RepoConfig({
                         </Button>,
                       ]}
                     >
-                      {item.path}
+                      <Space direction="vertical" style={{ width: "100%" }} size={0}>
+                        <Text>{item.path}</Text>
+                        {item.hasUpdates !== undefined && (
+                          <Text type={item.hasUpdates ? "warning" : "secondary"} style={{ fontSize: 12 }}>
+                            {item.hasUpdates ? "⚠️ 远端有更新" : "✅ 已是最新"}
+                          </Text>
+                        )}
+                      </Space>
                     </List.Item>
                   )}
                 />

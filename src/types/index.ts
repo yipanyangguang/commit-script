@@ -9,6 +9,8 @@ export interface CommitInfo {
 
 export interface RepoItem {
   path: string;
+  hasUpdates?: boolean; // 是否有更新
+  lastChecked?: number; // 上次检查时间戳
 }
 
 export interface RepoGroup {
