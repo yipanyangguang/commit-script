@@ -1,4 +1,5 @@
-import { Button, Select, Space, Table } from "antd";
+import { Button, Select, Space, Table, Modal } from "antd";
+import { useState } from "react";
 import type { CommitInfo } from "../types";
 
 interface PreviewExportProps {
@@ -18,6 +19,8 @@ export function PreviewExport({
   setPreviewRepo,
   exportReport,
 }: PreviewExportProps) {
+  const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null);
+
   const getFilteredCommits = () => {
     return commits.filter((c) => {
       const matchAuthor = previewAuthor === "all" || c.author === previewAuthor;
@@ -76,6 +79,12 @@ export function PreviewExport({
         size="small"
         pagination={{ pageSize: 20 }}
         columns={[
+          {
+            title: "序号",
+            key: "index",
+            render: (_: unknown, __: CommitInfo, index: number) => index + 1,
+            width: 60,
+          },
           { title: "日期", dataIndex: "date", width: 110 },
           { title: "项目", dataIndex: "repo_name" },
           { title: "分支", dataIndex: "branch" },
@@ -83,12 +92,77 @@ export function PreviewExport({
           {
             title: "消息",
             dataIndex: "message",
-            render: (text: string) => (
-              <span title={text}>{text.split("\n")[0]}</span>
-            ),
+            render: (text: string, record: CommitInfo) => {
+              const lines = text.split("\n");
+              const title = lines[0];
+              const hasMore =
+                lines.length > 1 && lines.slice(1).some((l) => l.trim() !== "");
+
+              return (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span title={title} style={{ marginRight: 8 }}>
+                    {title}
+                  </span>
+                  {hasMore && (
+                    <Button
+                      size="small"
+                      type="link"
+                      onClick={() => setSelectedCommit(record)}
+                      style={{ padding: 0 }}
+                    >
+                      更多
+                    </Button>
+                  )}
+                </div>
+              );
+            },
           },
         ]}
       />
+      <Modal
+        title="Commit 详情"
+        open={!!selectedCommit}
+        onCancel={() => setSelectedCommit(null)}
+        footer={null}
+        width={800}
+      >
+        {selectedCommit && (
+          <div>
+            <p>
+              <strong>项目:</strong> {selectedCommit.repo_name}
+            </p>
+            <p>
+              <strong>作者:</strong> {selectedCommit.author}
+            </p>
+            <p>
+              <strong>日期:</strong> {selectedCommit.date}
+            </p>
+            <p>
+              <strong>Hash:</strong> {selectedCommit.hash}
+            </p>
+            <div
+              style={{
+                marginTop: 16,
+                whiteSpace: "pre-wrap",
+                border: "1px solid #f0f0f0",
+                padding: 8,
+                borderRadius: 4,
+                backgroundColor: "#fafafa",
+                maxHeight: "60vh",
+                overflowY: "auto",
+              }}
+            >
+              {selectedCommit.message}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

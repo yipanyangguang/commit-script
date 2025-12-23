@@ -1,6 +1,7 @@
 import { Button, List, Space, Checkbox, Collapse, Input, Typography } from "antd";
 import type { RepoGroup } from "../types";
 import { useState } from "react";
+import dayjs from "dayjs";
 
 const { Panel } = Collapse;
 const { Text } = Typography;
@@ -14,8 +15,8 @@ interface RepoConfigProps {
   renameGroup: (groupId: string, name: string) => void;
   toggleGroup: (groupId: string, checked: boolean) => void;
   updateGroup: (groupId: string) => void;
-  checkAllReposStatus: () => void;
-  checkingStatus: boolean;
+  checkGroupStatus: (groupId: string) => void;
+  checkingGroupId: string | null;
 }
 
 export function RepoConfig({
@@ -27,8 +28,8 @@ export function RepoConfig({
   renameGroup,
   toggleGroup,
   updateGroup,
-  checkAllReposStatus,
-  checkingStatus,
+  checkGroupStatus,
+  checkingGroupId,
 }: RepoConfigProps) {
   // State for editing group name
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
@@ -52,9 +53,6 @@ export function RepoConfig({
         <Space>
           <Button type="primary" onClick={addGroup}>
             新建分组
-          </Button>
-          <Button loading={checkingStatus} onClick={checkAllReposStatus}>
-            获取状态
           </Button>
         </Space>
         
@@ -83,6 +81,16 @@ export function RepoConfig({
                       {group.name} <Text type="secondary" style={{ fontSize: 12 }}>(双击重命名)</Text>
                     </span>
                   )}
+                  <Button
+                    size="small"
+                    loading={checkingGroupId === group.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      checkGroupStatus(group.id);
+                    }}
+                  >
+                    获取状态
+                  </Button>
                   {group.repos.some((r) => r.hasUpdates) && (
                     <Button
                       type="primary"
@@ -136,8 +144,19 @@ export function RepoConfig({
                       <Space direction="vertical" style={{ width: "100%" }} size={0}>
                         <Text>{item.path}</Text>
                         {item.hasUpdates !== undefined && (
-                          <Text type={item.hasUpdates ? "warning" : "secondary"} style={{ fontSize: 12 }}>
-                            {item.hasUpdates ? "⚠️ 远端有更新" : "✅ 已是最新"}
+                          <Text
+                            type={item.hasUpdates ? "warning" : "secondary"}
+                            style={{ fontSize: 12 }}
+                          >
+                            {item.hasUpdates
+                              ? "⚠️ 远端有更新"
+                              : `✅ 已是最新${
+                                  item.lastChecked
+                                    ? ` (${dayjs(item.lastChecked).format(
+                                        "YYYY-MM-DD HH:mm:ss"
+                                      )})`
+                                    : ""
+                                }`}
                           </Text>
                         )}
                       </Space>

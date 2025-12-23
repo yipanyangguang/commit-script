@@ -76,33 +76,55 @@ function App() {
     localStorage.setItem("repoGroups", JSON.stringify(repoGroups));
   }, [repoGroups]);
 
-  async function checkAllReposStatus() {
-    setCheckingStatus(true);
-    const newGroups = [...repoGroups];
-    let changed = false;
+  async function checkGroupStatus(groupId: string) {
+    setCheckingGroupId(groupId);
+    const msgKey = `check_status_${groupId}`;
+    message.loading({ content: "正在准备检查...", key: msgKey, duration: 0 });
 
-    for (const group of newGroups) {
-      for (const repo of group.repos) {
-        try {
-          const hasUpdates = await invoke<boolean>("git_check_updates", {
-            repoPath: repo.path,
-          });
-          if (repo.hasUpdates !== hasUpdates) {
-            repo.hasUpdates = hasUpdates;
-            repo.lastChecked = Date.now();
-            changed = true;
-          }
-        } catch (e) {
-          console.warn(`Check updates failed for ${repo.path}:`, e);
+    const newGroups = [...repoGroups];
+    const groupIndex = newGroups.findIndex((g) => g.id === groupId);
+    if (groupIndex === -1) {
+      setCheckingGroupId(null);
+      return;
+    }
+
+    const group = newGroups[groupIndex];
+    let changed = false;
+    let checkedCount = 0;
+    const total = group.repos.length;
+
+    // Create a new array for repos to avoid mutation issues if any
+    const newRepos = [...group.repos];
+
+    for (let i = 0; i < newRepos.length; i++) {
+      const repo = newRepos[i];
+      const repoName = repo.path.split(/[/\\]/).pop();
+      message.loading({
+        content: `正在检查 (${checkedCount + 1}/${total}): ${repoName}`,
+        key: msgKey,
+        duration: 0,
+      });
+      try {
+        const hasUpdates = await invoke<boolean>("git_check_updates", {
+          repoPath: repo.path,
+        });
+        if (repo.hasUpdates !== hasUpdates) {
+          newRepos[i] = { ...repo, hasUpdates, lastChecked: Date.now() };
+          changed = true;
         }
+      } catch (e) {
+        console.warn(`Check updates failed for ${repo.path}:`, e);
       }
+      checkedCount++;
     }
 
     if (changed) {
+      newGroups[groupIndex] = { ...group, repos: newRepos };
       setRepoGroups(newGroups);
     }
-    setCheckingStatus(false);
-    message.success("状态检查完成");
+
+    setCheckingGroupId(null);
+    message.success({ content: "该组状态检查完成", key: msgKey, duration: 2 });
   }
 
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
@@ -113,7 +135,7 @@ function App() {
   const [specificAuthor, setSpecificAuthor] = useState("");
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [loading, setLoading] = useState(false);
-  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [checkingGroupId, setCheckingGroupId] = useState<string | null>(null);
 
   // Preview Filters
   const [previewAuthor, setPreviewAuthor] = useState<string>("all");
@@ -392,8 +414,8 @@ function App() {
           renameGroup={renameGroup}
           toggleGroup={toggleGroup}
           updateGroup={updateGroup}
-          checkAllReposStatus={checkAllReposStatus}
-          checkingStatus={checkingStatus}
+          checkGroupStatus={checkGroupStatus}
+          checkingGroupId={checkingGroupId}
         />
       ),
     },
