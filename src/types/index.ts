@@ -18,4 +18,11 @@ export interface RepoGroup {
   name: string;
   selected: boolean;
   repos: RepoItem[];
+  lastChecked?: number; // 上次检查时间戳
+}
+
+export interface AuthorAlias {
+  id: string;
+  original: string;
+  alias: string;
 }

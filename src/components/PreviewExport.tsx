@@ -1,6 +1,6 @@
 import { Button, Select, Space, Table, Modal } from "antd";
 import { useState } from "react";
-import type { CommitInfo } from "../types";
+import type { CommitInfo, AuthorAlias } from "../types";
 
 interface PreviewExportProps {
   commits: CommitInfo[];
@@ -9,6 +9,7 @@ interface PreviewExportProps {
   previewRepo: string;
   setPreviewRepo: (repo: string) => void;
   exportReport: () => void;
+  authorAliases?: AuthorAlias[];
 }
 
 export function PreviewExport({
@@ -18,8 +19,16 @@ export function PreviewExport({
   previewRepo,
   setPreviewRepo,
   exportReport,
+  authorAliases = [],
 }: PreviewExportProps) {
   const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null);
+
+  const getAuthorDisplay = (authorName: string) => {
+    const alias = authorAliases.find(
+      (a) => a.original.toLowerCase() === authorName.toLowerCase()
+    );
+    return alias ? alias.alias : authorName;
+  };
 
   const getFilteredCommits = () => {
     return commits.filter((c) => {
@@ -48,7 +57,7 @@ export function PreviewExport({
               { value: "all", label: "所有作者" },
               ...Array.from(new Set(commits.map((c) => c.author))).map((a) => ({
                 value: a,
-                label: a,
+                label: getAuthorDisplay(a),
               })),
             ]}
           />
@@ -88,7 +97,11 @@ export function PreviewExport({
           { title: "日期", dataIndex: "date", width: 110 },
           { title: "项目", dataIndex: "repo_name" },
           { title: "分支", dataIndex: "branch" },
-          { title: "作者", dataIndex: "author" },
+          { 
+            title: "作者", 
+            dataIndex: "author",
+            render: (text: string) => getAuthorDisplay(text)
+          },
           {
             title: "消息",
             dataIndex: "message",

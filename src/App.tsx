@@ -9,9 +9,10 @@ import "./App.css";
 
 import { RepoConfig } from "./components/RepoConfig";
 import { BasicConfig } from "./components/BasicConfig";
+import { AliasConfig } from "./components/AliasConfig";
 import { PreviewExport } from "./components/PreviewExport";
 import { About } from "./components/About";
-import type { CommitInfo, RepoGroup, RepoItem } from "./types";
+import type { CommitInfo, RepoGroup, RepoItem, AuthorAlias } from "./types";
 
 const { Title } = Typography;
 
@@ -76,6 +77,22 @@ function App() {
     localStorage.setItem("repoGroups", JSON.stringify(repoGroups));
   }, [repoGroups]);
 
+  const [authorAliases, setAuthorAliases] = useState<AuthorAlias[]>(() => {
+    const saved = localStorage.getItem("authorAliases");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse authorAliases", e);
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem("authorAliases", JSON.stringify(authorAliases));
+  }, [authorAliases]);
+
   async function checkGroupStatus(groupId: string) {
     setCheckingGroupId(groupId);
     const msgKey = `check_status_${groupId}`;
@@ -119,7 +136,10 @@ function App() {
     }
 
     if (changed) {
-      newGroups[groupIndex] = { ...group, repos: newRepos };
+      newGroups[groupIndex] = { ...group, repos: newRepos, lastChecked: Date.now() };
+      setRepoGroups(newGroups);
+    } else {
+      newGroups[groupIndex] = { ...group, lastChecked: Date.now() };
       setRepoGroups(newGroups);
     }
 
@@ -354,7 +374,7 @@ function App() {
 
       setCommits(filtered);
       message.success({ content: `分析完成，共找到 ${filtered.length} 条提交记录。`, key: msgKey, duration: 2 });
-      setActiveTab("4"); // Switch to Preview tab
+      setActiveTab("3"); // Switch to Preview tab
     } catch (e) {
       message.error({ content: `分析失败: ${e}`, key: msgKey, duration: 3 });
     } finally {
@@ -436,7 +456,7 @@ function App() {
       ),
     },
     {
-      key: "4",
+      key: "3",
       label: "预览与导出",
       children: (
         <PreviewExport
@@ -446,7 +466,15 @@ function App() {
           previewRepo={previewRepo}
           setPreviewRepo={setPreviewRepo}
           exportReport={exportReport}
+          authorAliases={authorAliases}
         />
+      ),
+    },
+    {
+      key: "4",
+      label: "别名配置",
+      children: (
+        <AliasConfig aliases={authorAliases} setAliases={setAuthorAliases} />
       ),
     },
     {

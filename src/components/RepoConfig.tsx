@@ -2,6 +2,11 @@ import { Button, List, Space, Checkbox, Collapse, Input, Typography } from "antd
 import type { RepoGroup } from "../types";
 import { useState } from "react";
 import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import "dayjs/locale/zh-cn";
+
+dayjs.extend(relativeTime);
+dayjs.locale("zh-cn");
 
 const { Panel } = Collapse;
 const { Text } = Typography;
@@ -34,6 +39,16 @@ export function RepoConfig({
   // State for editing group name
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [activeKeys, setActiveKeys] = useState<string[]>(() => {
+    const saved = localStorage.getItem("repoConfigActiveKeys");
+    return saved ? JSON.parse(saved) : repoGroups.map((g) => g.id);
+  });
+
+  const handleCollapseChange = (keys: string | string[]) => {
+    const newKeys = Array.isArray(keys) ? keys : [keys];
+    setActiveKeys(newKeys);
+    localStorage.setItem("repoConfigActiveKeys", JSON.stringify(newKeys));
+  };
 
   const startEditing = (group: RepoGroup) => {
     setEditingGroupId(group.id);
@@ -56,7 +71,7 @@ export function RepoConfig({
           </Button>
         </Space>
         
-        <Collapse defaultActiveKey={repoGroups.map(g => g.id)}>
+        <Collapse activeKey={activeKeys} onChange={handleCollapseChange}>
           {repoGroups.map((group) => (
             <Panel
               key={group.id}
@@ -91,6 +106,11 @@ export function RepoConfig({
                   >
                     获取状态
                   </Button>
+                  {group.lastChecked && (
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {dayjs(group.lastChecked).fromNow()}
+                    </Text>
+                  )}
                   {group.repos.some((r) => r.hasUpdates) && (
                     <Button
                       type="primary"
