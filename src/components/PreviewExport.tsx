@@ -1,6 +1,8 @@
-import { Button, Select, Space, Table, Modal } from "antd";
+import { Button, Select, Space, Table, Modal, Tooltip } from "antd";
 import { useState } from "react";
-import type { CommitInfo, AuthorAlias } from "../types";
+import { open } from "@tauri-apps/plugin-shell";
+import { GithubOutlined, GitlabOutlined, GlobalOutlined } from "@ant-design/icons";
+import type { CommitInfo, AuthorAlias, RepoGroup } from "../types";
 
 interface PreviewExportProps {
   commits: CommitInfo[];
@@ -10,6 +12,7 @@ interface PreviewExportProps {
   setPreviewRepo: (repo: string) => void;
   exportReport: () => void;
   authorAliases?: AuthorAlias[];
+  repoGroups?: RepoGroup[];
 }
 
 export function PreviewExport({
@@ -20,6 +23,7 @@ export function PreviewExport({
   setPreviewRepo,
   exportReport,
   authorAliases = [],
+  repoGroups = [],
 }: PreviewExportProps) {
   const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null);
 
@@ -28,6 +32,43 @@ export function PreviewExport({
       (a) => a.original.toLowerCase() === authorName.toLowerCase()
     );
     return alias ? alias.alias : authorName;
+  };
+
+  const getRemoteUrl = (repoName: string) => {
+    for (const group of repoGroups) {
+      const repo = group.repos.find(r => r.path.endsWith(repoName) || r.path.split(/[/\\]/).pop() === repoName);
+      if (repo && repo.remoteUrl) {
+        return repo.remoteUrl;
+      }
+    }
+    return null;
+  };
+
+  const openCommitUrl = async (repoName: string, hash: string) => {
+    let url = getRemoteUrl(repoName);
+    if (!url) return;
+
+    // Normalize URL
+    // git@github.com:user/repo.git -> https://github.com/user/repo
+    if (url.startsWith("git@")) {
+      url = url.replace(":", "/").replace("git@", "http://");
+    }
+    if (url.endsWith(".git")) {
+      url = url.slice(0, -4);
+    }
+
+    // Construct commit URL
+    // GitHub/GitLab: /commit/<hash>
+    // Bitbucket: /commits/<hash>
+    // Azure DevOps: /commit/<hash>
+    // Defaulting to /commit/<hash> as it's most common
+    const commitUrl = `${url}/commit/${hash}`;
+    
+    try {
+      await open(commitUrl);
+    } catch (e) {
+      console.error("Failed to open URL:", e);
+    }
   };
 
   const getFilteredCommits = () => {
@@ -95,7 +136,29 @@ export function PreviewExport({
             width: 60,
           },
           { title: "日期", dataIndex: "date", width: 110 },
-          { title: "项目", dataIndex: "repo_name" },
+          { 
+            title: "项目", 
+            dataIndex: "repo_name",
+            render: (text: string, record: CommitInfo) => {
+              const url = getRemoteUrl(text);
+              return (
+                <Space>
+                  {text}
+                  {url && (
+                    <Tooltip title="在浏览器中打开">
+                      <Button 
+                        type="text" 
+                        size="small" 
+                        icon={<GlobalOutlined />} 
+                        onClick={() => openCommitUrl(text, record.hash)}
+                        style={{ color: '#1890ff' }}
+                      />
+                    </Tooltip>
+                  )}
+                </Space>
+              );
+            }
+          },
           { title: "分支", dataIndex: "branch" },
           { 
             title: "作者", 

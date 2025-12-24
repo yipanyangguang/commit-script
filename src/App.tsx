@@ -11,6 +11,7 @@ import { RepoConfig } from "./components/RepoConfig";
 import { BasicConfig } from "./components/BasicConfig";
 import { AliasConfig } from "./components/AliasConfig";
 import { PreviewExport } from "./components/PreviewExport";
+import { Dashboard } from "./components/Dashboard";
 import { About } from "./components/About";
 import type { CommitInfo, RepoGroup, RepoItem, AuthorAlias } from "./types";
 
@@ -125,8 +126,18 @@ function App() {
         const hasUpdates = await invoke<boolean>("git_check_updates", {
           repoPath: repo.path,
         });
-        if (repo.hasUpdates !== hasUpdates) {
-          newRepos[i] = { ...repo, hasUpdates, lastChecked: Date.now() };
+        
+        // Try to fetch remote URL if missing or just to be sure
+        let remoteUrl = repo.remoteUrl;
+        try {
+           const url = await invoke<string>("git_get_remote_url", { repoPath: repo.path });
+           if (url) remoteUrl = url;
+        } catch (e) {
+           // ignore error if remote url cannot be fetched
+        }
+
+        if (repo.hasUpdates !== hasUpdates || repo.remoteUrl !== remoteUrl) {
+          newRepos[i] = { ...repo, hasUpdates, remoteUrl, lastChecked: Date.now() };
           changed = true;
         }
       } catch (e) {
@@ -171,12 +182,19 @@ function App() {
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected];
       const validPaths: string[] = [];
+      const remoteUrls: Record<string, string> = {};
 
       for (const path of paths) {
         if (path) {
           const isGit = await invoke("check_git_repo", { path });
           if (isGit) {
             validPaths.push(path);
+            try {
+              const url = await invoke<string>("git_get_remote_url", { repoPath: path });
+              remoteUrls[path] = url;
+            } catch (e) {
+              console.warn(`Failed to get remote url for ${path}:`, e);
+            }
           } else {
             message.warning(`警告: ${path} 不是一个 Git 仓库。`);
           }
@@ -188,6 +206,7 @@ function App() {
           if (group.id === groupId) {
             const newItems = validPaths.map((path) => ({
               path,
+              remoteUrl: remoteUrls[path] || "",
             }));
             const existingPaths = new Set(group.repos.map((item) => item.path));
             const uniqueNewItems = newItems.filter(
@@ -449,7 +468,6 @@ function App() {
           authorMode={authorMode}
           setAuthorMode={setAuthorMode}
           specificAuthor={specificAuthor}
-          setSpecificAuthor={setSpecificAuthor}
           startAnalysis={startAnalysis}
           loading={loading}
         />
@@ -457,6 +475,11 @@ function App() {
     },
     {
       key: "3",
+      label: "数据概览",
+      children: <Dashboard commits={commits} authorAliases={authorAliases} />,
+    },
+    {
+      key: "4",
       label: "预览与导出",
       children: (
         <PreviewExport
@@ -467,18 +490,19 @@ function App() {
           setPreviewRepo={setPreviewRepo}
           exportReport={exportReport}
           authorAliases={authorAliases}
+          repoGroups={repoGroups}
         />
       ),
     },
     {
-      key: "4",
+      key: "5",
       label: "别名配置",
       children: (
         <AliasConfig aliases={authorAliases} setAliases={setAuthorAliases} />
       ),
     },
     {
-      key: "5",
+      key: "6",
       label: "说明",
       children: <About />,
     },

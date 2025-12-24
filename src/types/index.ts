@@ -11,6 +11,7 @@ export interface RepoItem {
   path: string;
   hasUpdates?: boolean; // 是否有更新
   lastChecked?: number; // 上次检查时间戳
+  remoteUrl?: string; // 远程仓库地址
 }
 
 export interface RepoGroup {
