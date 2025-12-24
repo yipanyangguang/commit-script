@@ -1,4 +1,4 @@
-import { Card, Col, Row, Statistic, Typography, Empty } from "antd";
+import { Card, Col, Row, Statistic, Empty } from "antd";
 import {
   PieChart,
   Pie,
@@ -113,7 +113,7 @@ export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }: { name: string; percent?: number }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
+                    label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
