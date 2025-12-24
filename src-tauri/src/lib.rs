@@ -51,16 +51,51 @@ async fn git_check_updates(repo_path: String) -> Result<bool, String> {
     }
 
     // git fetch --dry-run 的输出通常在 stderr
-    let stderr = String::from_utf8_lossy(&output.stderr);
     // 如果 stderr 不为空，且不包含 "Fetching"，则认为有更新
     // 注意：不同 git 版本输出可能不同，这里是一个简单的启发式判断
     // 更好的方式可能是对比 ls-remote，但 dry-run 比较快且简单
     // 只要有输出（除了 Fetching origin... 这种进度条），就认为有潜在更新
     
-    // 过滤掉只包含 "Fetching" 的行，看是否还有其他内容
-    let has_updates = stderr.lines().any(|line| !line.trim().starts_with("Fetching"));
-    
-    Ok(has_updates)
+    // 如果 stderr 不为空，说明有更新
+    Ok(!output.stderr.is_empty())
+}
+
+#[tauri::command]
+async fn git_get_remote_url(repo_path: String) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(&["remote", "get-url", "origin"])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to execute git remote get-url in {}: {}", repo_path, e))?;
+
+    if output.status.success() {
+        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(url)
+    } else {
+        // Try to get any remote if origin doesn't exist
+        let output_any = Command::new("git")
+            .args(&["remote"])
+            .current_dir(&repo_path)
+            .output()
+            .map_err(|e| format!("Failed to list remotes in {}: {}", repo_path, e))?;
+            
+        let remotes = String::from_utf8_lossy(&output_any.stdout);
+        let first_remote = remotes.lines().next();
+        
+        if let Some(remote) = first_remote {
+             let output_remote = Command::new("git")
+                .args(&["remote", "get-url", remote])
+                .current_dir(&repo_path)
+                .output()
+                .map_err(|e| format!("Failed to get url for remote {} in {}: {}", remote, repo_path, e))?;
+                
+             if output_remote.status.success() {
+                 return Ok(String::from_utf8_lossy(&output_remote.stdout).trim().to_string());
+             }
+        }
+
+        Ok("".to_string())
+    }
 }
 
 #[tauri::command]
@@ -279,7 +314,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch, git_check_updates])
+        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch, git_check_updates, git_get_remote_url])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
