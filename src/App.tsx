@@ -468,6 +468,7 @@ function App() {
           authorMode={authorMode}
           setAuthorMode={setAuthorMode}
           specificAuthor={specificAuthor}
+          setSpecificAuthor={setSpecificAuthor}
           startAnalysis={startAnalysis}
           loading={loading}
         />

@@ -1,7 +1,7 @@
 import { Button, Select, Space, Table, Modal, Tooltip } from "antd";
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-shell";
-import { GithubOutlined, GitlabOutlined, GlobalOutlined } from "@ant-design/icons";
+import { GlobalOutlined } from "@ant-design/icons";
 import type { CommitInfo, AuthorAlias, RepoGroup } from "../types";
 
 interface PreviewExportProps {
