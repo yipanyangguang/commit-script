@@ -360,11 +360,20 @@ async fn export_report(commits: Vec<CommitInfo>, export_path: String, start_date
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            #[cfg(debug_assertions)]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    window.open_devtools();
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch, git_check_updates, git_get_remote_url])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
