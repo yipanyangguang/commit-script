@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Card, Col, Row, Statistic, Empty, Tooltip as AntTooltip, Button, Typography, Space, message } from "antd";
+import { Card, Col, Row, Statistic, Empty, Tooltip as AntTooltip, Button, Typography, message } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import html2canvas from "html2canvas";
 import { save } from "@tauri-apps/plugin-dialog";
