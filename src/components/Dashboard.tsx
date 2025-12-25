@@ -1,4 +1,4 @@
-import { Card, Col, Row, Statistic, Empty } from "antd";
+import { Card, Col, Row, Statistic, Empty, Tooltip as AntTooltip } from "antd";
 import {
   PieChart,
   Pie,
@@ -11,9 +11,14 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  AreaChart,
+  Area,
 } from "recharts";
 import type { CommitInfo, AuthorAlias } from "../types";
 import dayjs from "dayjs";
+import "dayjs/locale/zh-cn";
+
+dayjs.locale("zh-cn");
 
 interface DashboardProps {
   commits: CommitInfo[];
@@ -21,6 +26,65 @@ interface DashboardProps {
 }
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8", "#82ca9d"];
+
+// Heatmap Component
+function ContributionHeatmap({ commits }: { commits: CommitInfo[] }) {
+  const today = dayjs();
+  // Generate last 6 months dates
+  const startDate = today.subtract(6, "month").startOf("week");
+  const totalDays = today.diff(startDate, "day") + 1;
+  
+  const dateMap = commits.reduce((acc, commit) => {
+    acc[commit.date] = (acc[commit.date] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const weeks = [];
+  let currentWeek = [];
+  let currentDate = startDate.clone();
+
+  for (let i = 0; i < totalDays; i++) {
+    const dateStr = currentDate.format("YYYY-MM-DD");
+    const count = dateMap[dateStr] || 0;
+    
+    // Determine color intensity
+    let color = "#ebedf0"; // 0
+    if (count > 0) color = "#9be9a8"; // 1-2
+    if (count > 2) color = "#40c463"; // 3-5
+    if (count > 5) color = "#30a14e"; // 6-10
+    if (count > 10) color = "#216e39"; // >10
+
+    currentWeek.push({ date: dateStr, count, color });
+
+    if (currentWeek.length === 7) {
+      weeks.push(currentWeek);
+      currentWeek = [];
+    }
+    currentDate = currentDate.add(1, "day");
+  }
+  if (currentWeek.length > 0) weeks.push(currentWeek);
+
+  return (
+    <div style={{ display: "flex", gap: 4, overflowX: "auto", padding: 10 }}>
+      {weeks.map((week, i) => (
+        <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {week.map((day) => (
+            <AntTooltip key={day.date} title={`${day.date}: ${day.count} commits`}>
+              <div
+                style={{
+                  width: 12,
+                  height: 12,
+                  backgroundColor: day.color,
+                  borderRadius: 2,
+                }}
+              />
+            </AntTooltip>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
   if (commits.length === 0) {
@@ -34,7 +98,6 @@ export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
   // Helper to get display name
   const getAuthorName = (originalName: string) => {
     const cleanOriginal = originalName.trim();
-    // Try exact match first (trimmed), then case-insensitive match
     const alias = authorAliases.find(a => 
       a.original.trim() === cleanOriginal || 
       a.original.trim().toLowerCase() === cleanOriginal.toLowerCase()
@@ -42,13 +105,11 @@ export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
     return alias ? alias.alias : originalName;
   };
 
-  // 1. 提交类型统计 (feat, fix, etc.)
+  // 1. 提交类型统计
   const typeData = commits.reduce((acc, commit) => {
     const type = commit.message.split(":")[0].split("(")[0].trim().toLowerCase();
-    // Simple heuristic for conventional commits
     const knownTypes = ["feat", "fix", "docs", "style", "refactor", "perf", "test", "chore", "build", "ci", "revert"];
     const cleanType = knownTypes.includes(type) ? type : "other";
-    
     acc[cleanType] = (acc[cleanType] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -57,20 +118,22 @@ export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 
-  // 2. 每日提交趋势
-  const dateData = commits.reduce((acc, commit) => {
-    const date = commit.date; // YYYY-MM-DD
-    acc[date] = (acc[date] || 0) + 1;
+  // 2. 每日提交趋势 & 代码行数
+  const dailyDataMap = commits.reduce((acc, commit) => {
+    const date = commit.date;
+    if (!acc[date]) {
+      acc[date] = { date, count: 0, insertions: 0, deletions: 0 };
+    }
+    acc[date].count += 1;
+    acc[date].insertions += commit.insertions || 0;
+    acc[date].deletions += commit.deletions || 0;
     return acc;
-  }, {} as Record<string, number>);
+  }, {} as Record<string, { date: string; count: number; insertions: number; deletions: number }>);
 
-  // Fill in missing dates if needed, but for now just show active days
-  // Or better, sort by date
-  const barData = Object.entries(dateData)
-    .map(([date, count]) => ({ date, count }))
+  const dailyData = Object.values(dailyDataMap)
     .sort((a, b) => dayjs(a.date).unix() - dayjs(b.date).unix());
 
-  // 3. 活跃作者 (Top 5)
+  // 3. 活跃作者
   const authorData = commits.reduce((acc, commit) => {
     const name = getAuthorName(commit.author);
     acc[name] = (acc[name] || 0) + 1;
@@ -82,22 +145,87 @@ export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
+  // 4. 工作时段分析
+  const hourlyDataMap = commits.reduce((acc, commit) => {
+    // timestamp is in seconds
+    const hour = dayjs.unix(commit.timestamp).hour();
+    acc[hour] = (acc[hour] || 0) + 1;
+    return acc;
+  }, {} as Record<number, number>);
+
+  const hourlyData = Array.from({ length: 24 }, (_, i) => ({
+    hour: `${i}`,
+    count: hourlyDataMap[i] || 0,
+  }));
+
+  // 5. 总代码行数
+  const totalInsertions = commits.reduce((sum, c) => sum + (c.insertions || 0), 0);
+  const totalDeletions = commits.reduce((sum, c) => sum + (c.deletions || 0), 0);
+
   return (
     <div className="tab-content" style={{ overflowY: 'auto', overflowX: 'hidden', paddingBottom: 20 }}>
       <Row gutter={[16, 16]}>
-        <Col span={8}>
+        <Col span={6}>
           <Card>
             <Statistic title="总提交数" value={commits.length} />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
           <Card>
-            <Statistic title="活跃天数" value={barData.length} />
+            <Statistic title="活跃天数" value={dailyData.length} />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
           <Card>
-            <Statistic title="参与作者" value={Object.keys(authorData).length} />
+            <Statistic title="新增代码行" value={totalInsertions} valueStyle={{ color: '#3f8600' }} />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
+            <Statistic title="删除代码行" value={totalDeletions} valueStyle={{ color: '#cf1322' }} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col span={24}>
+          <Card title="贡献热力图 (最近6个月)">
+            <ContributionHeatmap commits={commits} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col span={12}>
+          <Card title="代码变动趋势">
+            <div style={{ height: 300 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dailyData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="insertions" name="新增" fill="#82ca9d" stackId="a" />
+                  <Bar dataKey="deletions" name="删除" fill="#ff8042" stackId="a" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card title="工作时段分布">
+            <div style={{ height: 300 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={hourlyData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="hour" unit="点" />
+                  <YAxis />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="count" name="提交数" stroke="#8884d8" fill="#8884d8" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </Card>
         </Col>
       </Row>
@@ -130,26 +258,8 @@ export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
           </Card>
         </Col>
         <Col span={12}>
-          <Card title="每日提交趋势">
-            <div style={{ height: 300 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#8884d8" name="提交数" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-        </Col>
-      </Row>
-      
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-         <Col span={24}>
             <Card title="Top 5 活跃作者">
-                <div style={{ height: 250 }}>
+                <div style={{ height: 300 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={topAuthors} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" />

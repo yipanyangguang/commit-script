@@ -99,6 +99,7 @@ export function RepoConfig({
                   <Button
                     size="small"
                     loading={checkingGroupId === group.id}
+                    disabled={!!checkingGroupId}
                     onClick={(e) => {
                       e.stopPropagation();
                       checkGroupStatus(group.id);

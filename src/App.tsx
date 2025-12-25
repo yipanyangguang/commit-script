@@ -95,27 +95,22 @@ function App() {
   }, [authorAliases]);
 
   async function checkGroupStatus(groupId: string) {
+    if (checkingGroupId) return;
     setCheckingGroupId(groupId);
     const msgKey = `check_status_${groupId}`;
     message.loading({ content: "正在准备检查...", key: msgKey, duration: 0 });
 
-    const newGroups = [...repoGroups];
-    const groupIndex = newGroups.findIndex((g) => g.id === groupId);
-    if (groupIndex === -1) {
+    const group = repoGroups.find((g) => g.id === groupId);
+    if (!group) {
       setCheckingGroupId(null);
       return;
     }
 
-    const group = newGroups[groupIndex];
-    let changed = false;
-    let checkedCount = 0;
     const total = group.repos.length;
+    let checkedCount = 0;
+    const results = new Map<string, { hasUpdates: boolean; remoteUrl: string }>();
 
-    // Create a new array for repos to avoid mutation issues if any
-    const newRepos = [...group.repos];
-
-    for (let i = 0; i < newRepos.length; i++) {
-      const repo = newRepos[i];
+    for (const repo of group.repos) {
       const repoName = repo.path.split(/[/\\]/).pop();
       message.loading({
         content: `正在检查 (${checkedCount + 1}/${total}): ${repoName}`,
@@ -126,33 +121,45 @@ function App() {
         const hasUpdates = await invoke<boolean>("git_check_updates", {
           repoPath: repo.path,
         });
-        
+
         // Try to fetch remote URL if missing or just to be sure
         let remoteUrl = repo.remoteUrl;
         try {
-           const url = await invoke<string>("git_get_remote_url", { repoPath: repo.path });
-           if (url) remoteUrl = url;
+          const url = await invoke<string>("git_get_remote_url", {
+            repoPath: repo.path,
+          });
+          if (url) remoteUrl = url;
         } catch (e) {
-           // ignore error if remote url cannot be fetched
+          // ignore error if remote url cannot be fetched
         }
 
-        if (repo.hasUpdates !== hasUpdates || repo.remoteUrl !== remoteUrl) {
-          newRepos[i] = { ...repo, hasUpdates, remoteUrl, lastChecked: Date.now() };
-          changed = true;
-        }
+        results.set(repo.path, { hasUpdates, remoteUrl: remoteUrl || "" });
       } catch (e) {
         console.warn(`Check updates failed for ${repo.path}:`, e);
       }
       checkedCount++;
     }
 
-    if (changed) {
-      newGroups[groupIndex] = { ...group, repos: newRepos, lastChecked: Date.now() };
-      setRepoGroups(newGroups);
-    } else {
-      newGroups[groupIndex] = { ...group, lastChecked: Date.now() };
-      setRepoGroups(newGroups);
-    }
+    setRepoGroups((prev) => {
+      return prev.map((g) => {
+        if (g.id !== groupId) return g;
+
+        const updatedRepos = g.repos.map((repo) => {
+          const res = results.get(repo.path);
+          if (res) {
+            if (
+              repo.hasUpdates !== res.hasUpdates ||
+              repo.remoteUrl !== res.remoteUrl
+            ) {
+              return { ...repo, ...res, lastChecked: Date.now() };
+            }
+          }
+          return repo;
+        });
+
+        return { ...g, repos: updatedRepos, lastChecked: Date.now() };
+      });
+    });
 
     setCheckingGroupId(null);
     message.success({ content: "该组状态检查完成", key: msgKey, duration: 2 });

@@ -5,6 +5,9 @@ export interface CommitInfo {
   message: string;
   branch: string;
   repo_name: string;
+  insertions: number;
+  deletions: number;
+  timestamp: number;
 }
 
 export interface RepoItem {

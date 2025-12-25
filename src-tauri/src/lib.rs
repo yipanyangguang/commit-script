@@ -13,6 +13,9 @@ pub struct CommitInfo {
     message: String,
     branch: String,
     repo_name: String,
+    insertions: i32,
+    deletions: i32,
+    timestamp: i64,
 }
 
 #[tauri::command]
@@ -112,8 +115,14 @@ async fn get_commits(repo_paths: Vec<String>, start_date: String, end_date: Stri
         let path = Path::new(&repo_path);
         let repo_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
         
-        // 1. git log
-        let commit_delimiter = "^^^^^COMMIT^^^^^";
+        // 1. git log with numstat
+        // Format:
+        // ^^^^^COMMIT^^^^^
+        // date|||hash|||author
+        // message body...
+        // ^^^^^MSG_END^^^^^
+        // 10      5       file1.rs
+        // ...
         let log_args = [
             "log",
             "--all",
@@ -121,7 +130,8 @@ async fn get_commits(repo_paths: Vec<String>, start_date: String, end_date: Stri
             &format!("--until={} 23:59:59", end_date),
             "--no-merges",
             "--date=format:%Y-%m-%d",
-            &format!("--pretty=format:%ad|||%H|||%an|||%B{}", commit_delimiter),
+            "--numstat",
+            "--pretty=format:^^^^^COMMIT^^^^^%n%ad|||%H|||%an|||%at%n%B%n^^^^^MSG_END^^^^^",
         ];
 
         let output = Command::new("git")
@@ -136,20 +146,56 @@ async fn get_commits(repo_paths: Vec<String>, start_date: String, end_date: Stri
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let raw_commits: Vec<&str> = stdout.split(commit_delimiter).collect();
-        
         let mut commits = Vec::new();
         let mut hashes = Vec::new();
 
-        for block in raw_commits {
-            if block.trim().is_empty() { continue; }
-            let parts: Vec<&str> = block.split("|||").collect();
-            if parts.len() >= 4 {
-                let date = parts[0].trim().to_string();
-                let hash = parts[1].trim().to_string();
-                let author = parts[2].trim().to_string();
-                let message = parts[3..].join("|||").trim().to_string();
-                
+        let lines: Vec<&str> = stdout.lines().collect();
+        let mut i = 0;
+
+        while i < lines.len() {
+            if lines[i] == "^^^^^COMMIT^^^^^" {
+                i += 1;
+                if i >= lines.len() { break; }
+
+                // Parse Header
+                let header_parts: Vec<&str> = lines[i].split("|||").collect();
+                if header_parts.len() < 4 {
+                    i += 1;
+                    continue;
+                }
+                let date = header_parts[0].trim().to_string();
+                let hash = header_parts[1].trim().to_string();
+                let author = header_parts[2].trim().to_string();
+                let timestamp = header_parts[3].trim().parse::<i64>().unwrap_or(0);
+                i += 1;
+
+                // Parse Message
+                let mut message_lines = Vec::new();
+                while i < lines.len() && lines[i] != "^^^^^MSG_END^^^^^" {
+                    message_lines.push(lines[i]);
+                    i += 1;
+                }
+                let message = message_lines.join("\n").trim().to_string();
+                if i < lines.len() { i += 1; } // Skip MSG_END
+
+                // Parse Numstat
+                let mut insertions = 0;
+                let mut deletions = 0;
+                while i < lines.len() && lines[i] != "^^^^^COMMIT^^^^^" {
+                    let line = lines[i].trim();
+                    if !line.is_empty() {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            // Handle binary files which show as "-"
+                            let ins = parts[0].parse::<i32>().unwrap_or(0);
+                            let del = parts[1].parse::<i32>().unwrap_or(0);
+                            insertions += ins;
+                            deletions += del;
+                        }
+                    }
+                    i += 1;
+                }
+
                 commits.push(CommitInfo {
                     date,
                     hash: hash.clone(),
@@ -157,8 +203,13 @@ async fn get_commits(repo_paths: Vec<String>, start_date: String, end_date: Stri
                     message,
                     branch: "Unknown".to_string(),
                     repo_name: repo_name.clone(),
+                    insertions,
+                    deletions,
+                    timestamp,
                 });
                 hashes.push(hash);
+            } else {
+                i += 1;
             }
         }
 
