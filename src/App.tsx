@@ -1,11 +1,15 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Tabs, message, Typography } from "antd";
+import { Tabs, message, Typography, ConfigProvider } from "antd";
+import zhCN from "antd/locale/zh_CN";
 import type { TabsProps } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
+import "dayjs/locale/zh-cn";
 import "./App.css";
+
+dayjs.locale("zh-cn");
 
 import { RepoConfig } from "./components/RepoConfig";
 import { BasicConfig } from "./components/BasicConfig";
@@ -484,7 +488,13 @@ function App() {
     {
       key: "3",
       label: "数据概览",
-      children: <Dashboard commits={commits} authorAliases={authorAliases} />,
+      children: (
+        <Dashboard
+          commits={commits}
+          authorAliases={authorAliases}
+          dateRange={dateRange}
+        />
+      ),
     },
     {
       key: "4",
@@ -517,18 +527,20 @@ function App() {
   ];
 
   return (
-    <div className="container">
-      <Title level={3} style={{ textAlign: "center", marginBottom: 20 }}>
-        Git 提交记录导出工具
-      </Title>
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={items}
-        type="card"
-        style={{ flex: 1, display: "flex", flexDirection: "column" }}
-      />
-    </div>
+    <ConfigProvider locale={zhCN}>
+      <div className="container">
+        <Title level={3} style={{ textAlign: "center", marginBottom: 20 }}>
+          Git 提交记录导出工具
+        </Title>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={items}
+          type="card"
+          style={{ flex: 1, display: "flex", flexDirection: "column" }}
+        />
+      </div>
+    </ConfigProvider>
   );
 }
 

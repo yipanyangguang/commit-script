@@ -127,7 +127,12 @@ export function PreviewExport({
         dataSource={getFilteredCommits()}
         rowKey="hash"
         size="small"
-        pagination={{ pageSize: 20 }}
+        pagination={{
+          defaultPageSize: 20,
+          showSizeChanger: true,
+          pageSizeOptions: ["10", "20", "50", "100"],
+          showTotal: (total) => `共 ${total} 条`,
+        }}
         columns={[
           {
             title: "序号",

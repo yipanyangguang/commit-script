@@ -1,4 +1,9 @@
-import { Card, Col, Row, Statistic, Empty, Tooltip as AntTooltip } from "antd";
+import { useRef, useState } from "react";
+import { Card, Col, Row, Statistic, Empty, Tooltip as AntTooltip, Button, Typography, Space, message } from "antd";
+import { DownloadOutlined } from "@ant-design/icons";
+import html2canvas from "html2canvas";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeFile } from "@tauri-apps/plugin-fs";
 import {
   PieChart,
   Pie,
@@ -15,6 +20,7 @@ import {
   Area,
 } from "recharts";
 import type { CommitInfo, AuthorAlias } from "../types";
+import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
 
@@ -23,24 +29,24 @@ dayjs.locale("zh-cn");
 interface DashboardProps {
   commits: CommitInfo[];
   authorAliases?: AuthorAlias[];
+  dateRange: [Dayjs, Dayjs];
 }
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8", "#82ca9d"];
 
 // Heatmap Component
-function ContributionHeatmap({ commits }: { commits: CommitInfo[] }) {
-  const today = dayjs();
-  // Generate last 6 months dates
-  const startDate = today.subtract(6, "month").startOf("week");
-  const totalDays = today.diff(startDate, "day") + 1;
+function ContributionHeatmap({ commits, dateRange }: { commits: CommitInfo[], dateRange: [Dayjs, Dayjs] }) {
+  const [start, end] = dateRange;
+  const startDate = start.startOf("day");
+  const endDate = end.endOf("day");
+  const totalDays = endDate.diff(startDate, "day") + 1;
   
   const dateMap = commits.reduce((acc, commit) => {
     acc[commit.date] = (acc[commit.date] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
-  const weeks = [];
-  let currentWeek = [];
+  const days = [];
   let currentDate = startDate.clone();
 
   for (let i = 0; i < totalDays; i++) {
@@ -54,39 +60,83 @@ function ContributionHeatmap({ commits }: { commits: CommitInfo[] }) {
     if (count > 5) color = "#30a14e"; // 6-10
     if (count > 10) color = "#216e39"; // >10
 
-    currentWeek.push({ date: dateStr, count, color });
-
-    if (currentWeek.length === 7) {
-      weeks.push(currentWeek);
-      currentWeek = [];
-    }
+    days.push({ date: dateStr, count, color, dayOfMonth: currentDate.date() });
     currentDate = currentDate.add(1, "day");
   }
-  if (currentWeek.length > 0) weeks.push(currentWeek);
 
   return (
-    <div style={{ display: "flex", gap: 4, overflowX: "auto", padding: 10 }}>
-      {weeks.map((week, i) => (
-        <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {week.map((day) => (
-            <AntTooltip key={day.date} title={`${day.date}: ${day.count} commits`}>
-              <div
-                style={{
-                  width: 12,
-                  height: 12,
-                  backgroundColor: day.color,
-                  borderRadius: 2,
-                }}
-              />
-            </AntTooltip>
-          ))}
-        </div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: 10 }}>
+      {days.map((day) => (
+        <AntTooltip key={day.date} title={`${day.date}: ${day.count} commits`}>
+          <div
+            style={{
+              width: 24,
+              height: 24,
+              backgroundColor: day.color,
+              borderRadius: 3,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 10,
+              color: day.count > 0 ? "#fff" : "#999",
+              cursor: "default",
+            }}
+          >
+            {day.dayOfMonth}
+          </div>
+        </AntTooltip>
       ))}
     </div>
   );
 }
 
-export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
+export function Dashboard({ commits, authorAliases = [], dateRange }: DashboardProps) {
+  const dashboardRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportImage = async () => {
+    if (!dashboardRef.current) return;
+    setExporting(true);
+    const msgKey = "export_image";
+    message.loading({ content: "正在生成图片...", key: msgKey, duration: 0 });
+
+    try {
+      const canvas = await html2canvas(dashboardRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#f5f5f5',
+      });
+      
+      // Convert canvas to blob/buffer
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("Failed to create blob");
+      
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      // Open save dialog
+      const filePath = await save({
+        defaultPath: `dashboard-${dayjs().format("YYYYMMDD-HHmmss")}.png`,
+        filters: [{
+          name: 'Image',
+          extensions: ['png']
+        }]
+      });
+
+      if (filePath) {
+        await writeFile(filePath, uint8Array);
+        message.success({ content: "图片导出成功", key: msgKey, duration: 2 });
+      } else {
+        message.info({ content: "已取消导出", key: msgKey, duration: 2 });
+      }
+    } catch (e) {
+      console.error("Export failed:", e);
+      message.error({ content: "图片导出失败，请尝试保存到“下载”或“文档”等常用目录", key: msgKey, duration: 4 });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (commits.length === 0) {
     return (
       <div className="tab-content" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
@@ -162,8 +212,22 @@ export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
   const totalInsertions = commits.reduce((sum, c) => sum + (c.insertions || 0), 0);
   const totalDeletions = commits.reduce((sum, c) => sum + (c.deletions || 0), 0);
 
+  // Get unique repo names
+  const repoNames = Array.from(new Set(commits.map(c => c.repo_name))).join(", ");
+
   return (
-    <div className="tab-content" style={{ overflowY: 'auto', overflowX: 'hidden', paddingBottom: 20 }}>
+    <div className="tab-content" ref={dashboardRef} style={{ overflowY: 'auto', overflowX: 'hidden', paddingBottom: 20, padding: 24, background: '#f5f5f5' }}>
+       {/* Header */}
+       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <div>
+            <Typography.Title level={4} style={{ margin: 0 }}>数据概览</Typography.Title>
+            <Typography.Text type="secondary">
+              {dateRange[0].format("YYYY-MM-DD")} 至 {dateRange[1].format("YYYY-MM-DD")}
+            </Typography.Text>
+          </div>
+          <Button icon={<DownloadOutlined />} onClick={handleExportImage} loading={exporting} data-html2canvas-ignore="true">导出图片</Button>
+       </div>
+
       <Row gutter={[16, 16]}>
         <Col span={6}>
           <Card>
@@ -189,8 +253,8 @@ export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col span={24}>
-          <Card title="贡献热力图 (最近6个月)">
-            <ContributionHeatmap commits={commits} />
+          <Card title="贡献热力图">
+            <ContributionHeatmap commits={commits} dateRange={dateRange} />
           </Card>
         </Col>
       </Row>
@@ -273,6 +337,13 @@ export function Dashboard({ commits, authorAliases = [] }: DashboardProps) {
             </Card>
          </Col>
       </Row>
+
+       {/* Footer */}
+       <div style={{ marginTop: 24, textAlign: 'center', color: '#888' }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+             统计项目: {repoNames} | 时间范围: {dateRange[0].format("YYYY-MM-DD")} ~ {dateRange[1].format("YYYY-MM-DD")}
+          </Typography.Text>
+       </div>
     </div>
   );
 }
