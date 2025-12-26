@@ -212,6 +212,22 @@ export function Dashboard({ commits, authorAliases = [], dateRange }: DashboardP
   const totalInsertions = commits.reduce((sum, c) => sum + (c.insertions || 0), 0);
   const totalDeletions = commits.reduce((sum, c) => sum + (c.deletions || 0), 0);
 
+  // 6. 成员代码变动统计
+  const authorStatsMap = commits.reduce((acc, commit) => {
+    const name = getAuthorName(commit.author);
+    if (!acc[name]) {
+      acc[name] = { name, insertions: 0, deletions: 0, net: 0 };
+    }
+    acc[name].insertions += commit.insertions || 0;
+    acc[name].deletions += commit.deletions || 0;
+    acc[name].net += (commit.insertions || 0) - (commit.deletions || 0);
+    return acc;
+  }, {} as Record<string, { name: string; insertions: number; deletions: number; net: number }>);
+
+  const authorStats = Object.values(authorStatsMap)
+    .sort((a, b) => b.insertions - a.insertions)
+    .slice(0, 10);
+
   // Get unique repo names
   const repoNames = Array.from(new Set(commits.map(c => c.repo_name))).join(", ");
 
@@ -302,10 +318,10 @@ export function Dashboard({ commits, authorAliases = [], dateRange }: DashboardP
                 <PieChart>
                   <Pie
                     data={pieData}
-                    cx="50%"
+                    cx="40%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}
+                    label={({ percent }: { percent?: number }) => `${((percent || 0) * 100).toFixed(0)}%`}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
@@ -315,7 +331,7 @@ export function Dashboard({ commits, authorAliases = [], dateRange }: DashboardP
                     ))}
                   </Pie>
                   <Tooltip />
-                  <Legend />
+                  <Legend layout="vertical" verticalAlign="middle" align="right" />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -336,6 +352,27 @@ export function Dashboard({ commits, authorAliases = [], dateRange }: DashboardP
                 </div>
             </Card>
          </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col span={24}>
+          <Card title="成员代码变动统计">
+            <div style={{ height: 400 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={authorStats}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="insertions" name="增加行数" fill="#82ca9d" />
+                  <Bar dataKey="deletions" name="减少行数" fill="#ff8042" />
+                  <Bar dataKey="net" name="净增加行数" fill="#8884d8" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </Col>
       </Row>
 
        {/* Footer */}

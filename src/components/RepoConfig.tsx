@@ -8,7 +8,6 @@ import "dayjs/locale/zh-cn";
 dayjs.extend(relativeTime);
 dayjs.locale("zh-cn");
 
-const { Panel } = Collapse;
 const { Text } = Typography;
 
 interface RepoConfigProps {
@@ -64,83 +63,84 @@ export function RepoConfig({
 
   return (
     <div className="tab-content">
-      <Space direction="vertical" style={{ width: "100%" }}>
+      <Space orientation="vertical" style={{ width: "100%" }}>
         <Space>
           <Button type="primary" onClick={addGroup}>
             新建分组
           </Button>
         </Space>
         
-        <Collapse activeKey={activeKeys} onChange={handleCollapseChange}>
-          {repoGroups.map((group) => (
-            <Panel
-              key={group.id}
-              header={
-                <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Checkbox
-                    checked={group.selected}
-                    onChange={(e) => toggleGroup(group.id, e.target.checked)}
-                  />
-                  {editingGroupId === group.id ? (
-                    <Input
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      onBlur={() => saveEditing(group.id)}
-                      onPressEnter={() => saveEditing(group.id)}
-                      autoFocus
-                      size="small"
-                      style={{ width: 200 }}
-                    />
-                  ) : (
-                    <span onDoubleClick={() => startEditing(group)} style={{ cursor: 'text' }}>
-                      {group.name} <Text type="secondary" style={{ fontSize: 12 }}>(双击重命名)</Text>
-                    </span>
-                  )}
-                  <Button
+        <Collapse 
+          activeKey={activeKeys} 
+          onChange={handleCollapseChange}
+          items={repoGroups.map((group) => ({
+            key: group.id,
+            label: (
+              <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Checkbox
+                  checked={group.selected}
+                  onChange={(e) => toggleGroup(group.id, e.target.checked)}
+                />
+                {editingGroupId === group.id ? (
+                  <Input
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onBlur={() => saveEditing(group.id)}
+                    onPressEnter={() => saveEditing(group.id)}
+                    autoFocus
                     size="small"
-                    loading={checkingGroupId === group.id}
-                    disabled={!!checkingGroupId}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      checkGroupStatus(group.id);
-                    }}
-                  >
-                    获取状态
-                  </Button>
-                  {group.lastChecked && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {dayjs(group.lastChecked).fromNow()}
-                    </Text>
-                  )}
-                  {group.repos.some((r) => r.hasUpdates) && (
-                    <Button
-                      type="primary"
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateGroup(group.id);
-                      }}
-                    >
-                      更新
-                    </Button>
-                  )}
-                </div>
-              }
-              extra={
-                <Button 
-                  danger 
-                  size="small" 
-                  type="text"
+                    style={{ width: 200 }}
+                  />
+                ) : (
+                  <span onDoubleClick={() => startEditing(group)} style={{ cursor: 'text' }}>
+                    {group.name} <Text type="secondary" style={{ fontSize: 12 }}>(双击重命名)</Text>
+                  </span>
+                )}
+                <Button
+                  size="small"
+                  loading={checkingGroupId === group.id}
+                  disabled={!!checkingGroupId}
                   onClick={(e) => {
                     e.stopPropagation();
-                    removeGroup(group.id);
+                    checkGroupStatus(group.id);
                   }}
                 >
-                  删除分组
+                  获取状态
                 </Button>
-              }
-            >
-              <Space direction="vertical" style={{ width: "100%" }}>
+                {group.lastChecked && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {dayjs(group.lastChecked).fromNow()}
+                  </Text>
+                )}
+                {group.repos.some((r) => r.hasUpdates) && (
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateGroup(group.id);
+                    }}
+                  >
+                    更新
+                  </Button>
+                )}
+              </div>
+            ),
+            extra: (
+              <Button 
+                danger 
+                size="small" 
+                type="text"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeGroup(group.id);
+                }}
+              >
+                删除分组
+              </Button>
+            ),
+            children: (
+              <Space orientation="vertical" style={{ width: "100%" }}>
                 <Button size="small" onClick={() => addRepo(group.id)}>
                   添加仓库到此分组
                 </Button>
@@ -162,7 +162,7 @@ export function RepoConfig({
                         </Button>,
                       ]}
                     >
-                      <Space direction="vertical" style={{ width: "100%" }} size={0}>
+                      <Space orientation="vertical" style={{ width: "100%" }} size={0}>
                         <Text>{item.path}</Text>
                         {item.hasUpdates !== undefined && (
                           <Text
@@ -185,9 +185,9 @@ export function RepoConfig({
                   )}
                 />
               </Space>
-            </Panel>
-          ))}
-        </Collapse>
+            )
+          }))}
+        />
       </Space>
     </div>
   );

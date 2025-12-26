@@ -356,6 +356,21 @@ async fn export_report(commits: Vec<CommitInfo>, export_path: String, start_date
     Ok(())
 }
 
+#[tauri::command]
+async fn get_commit_diff(repo_path: String, hash: String) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(&["show", &hash])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to execute git show: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("Git show failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -374,7 +389,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch, git_check_updates, git_get_remote_url])
+        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch, git_check_updates, git_get_remote_url, get_commit_diff])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

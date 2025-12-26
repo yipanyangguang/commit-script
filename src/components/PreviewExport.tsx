@@ -1,7 +1,10 @@
-import { Button, Select, Space, Table, Modal, Tooltip } from "antd";
+import { Button, Select, Space, Table, Modal, Tooltip, message } from "antd";
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-shell";
+import { invoke } from "@tauri-apps/api/core";
 import { GlobalOutlined } from "@ant-design/icons";
+import * as Diff2Html from 'diff2html';
+import 'diff2html/bundles/css/diff2html.min.css';
 import type { CommitInfo, AuthorAlias, RepoGroup } from "../types";
 
 interface PreviewExportProps {
@@ -26,12 +29,53 @@ export function PreviewExport({
   repoGroups = [],
 }: PreviewExportProps) {
   const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null);
+  const [diffModalVisible, setDiffModalVisible] = useState(false);
+  const [diffContent, setDiffContent] = useState("");
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [currentDiffCommit, setCurrentDiffCommit] = useState<CommitInfo | null>(null);
 
   const getAuthorDisplay = (authorName: string) => {
     const alias = authorAliases.find(
       (a) => a.original.toLowerCase() === authorName.toLowerCase()
     );
     return alias ? alias.alias : authorName;
+  };
+
+  const handleViewDiff = async (commit: CommitInfo) => {
+    setCurrentDiffCommit(commit);
+    setDiffModalVisible(true);
+    setDiffLoading(true);
+    setDiffContent("");
+
+    try {
+      // Find the full path of the repo
+      let repoPath = "";
+      for (const group of repoGroups) {
+        const repo = group.repos.find(r => r.path.endsWith(commit.repo_name) || r.path.split(/[/\\]/).pop() === commit.repo_name);
+        if (repo) {
+          repoPath = repo.path;
+          break;
+        }
+      }
+
+      if (!repoPath) {
+        message.error("找不到仓库路径");
+        setDiffLoading(false);
+        return;
+      }
+
+      const diff = await invoke<string>("get_commit_diff", {
+        repoPath,
+        hash: commit.hash,
+      });
+      setDiffContent(diff);
+    } catch (e) {
+      console.error("Failed to get diff:", e);
+      message.error(`获取变更失败: ${e}`);
+      setDiffContent("获取变更失败");
+    } finally {
+      setDiffLoading(false);
+    }
   };
 
   const getRemoteUrl = (repoName: string) => {
@@ -204,6 +248,19 @@ export function PreviewExport({
               );
             },
           },
+          {
+            title: "操作",
+            key: "action",
+            width: 100,
+            render: (_: unknown, record: CommitInfo) => (
+              <Button 
+                size="small" 
+                onClick={() => handleViewDiff(record)}
+              >
+                查看变更
+              </Button>
+            ),
+          },
         ]}
       />
       <Modal
@@ -243,6 +300,40 @@ export function PreviewExport({
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title={`变更详情 - ${currentDiffCommit?.hash.substring(0, 7)}`}
+        open={diffModalVisible}
+        onCancel={() => setDiffModalVisible(false)}
+        footer={null}
+        width="95%"
+        centered
+        destroyOnClose
+        styles={{ body: { padding: 0, overflow: 'hidden' } }}
+      >
+        <div
+          style={{
+            height: "85vh",
+            overflow: "auto",
+            position: "relative",
+            padding: "16px",
+          }}
+        >
+          {diffLoading ? (
+            <div style={{ padding: 20, textAlign: "center" }}>加载中...</div>
+          ) : (
+            <div
+              dangerouslySetInnerHTML={{
+                __html: Diff2Html.html(diffContent, {
+                  drawFileList: true,
+                  matching: "lines",
+                  outputFormat: "side-by-side",
+                }),
+              }}
+            />
+          )}
+        </div>
       </Modal>
     </div>
   );

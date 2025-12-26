@@ -57,7 +57,7 @@ export function AliasConfig({ aliases, setAliases }: AliasConfigProps) {
 
   return (
     <div className="tab-content">
-      <Space direction="vertical" style={{ width: "100%" }} size="large">
+      <Space orientation="vertical" style={{ width: "100%" }} size="large">
         <div>
           <Title level={5}>添加别名</Title>
           <Form form={form} layout="inline" onFinish={onFinish}>

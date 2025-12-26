@@ -56,10 +56,10 @@ export function BasicConfig({
   return (
     <div className="tab-content">
       <Card title="基本配置">
-        <Space direction="vertical" style={{ width: "100%" }}>
+        <Space orientation="vertical" style={{ width: "100%" }}>
           <div style={{ marginBottom: 16 }}>
             <div style={{ marginBottom: 8, fontWeight: 500 }}>时间范围</div>
-            <Space direction="vertical" style={{ width: "100%" }}>
+            <Space orientation="vertical" style={{ width: "100%" }}>
               <Space wrap>
                 <Button size="small" onClick={() => setDateRangeShortcut("today")}>
                   今天
@@ -90,7 +90,7 @@ export function BasicConfig({
 
           <div style={{ marginBottom: 16 }}>
             <div style={{ marginBottom: 8, fontWeight: 500 }}>统计对象</div>
-            <Space direction="vertical" style={{ width: "100%" }}>
+            <Space orientation="vertical" style={{ width: "100%" }}>
               <Radio.Group
                 value={authorMode}
                 onChange={(e) => setAuthorMode(e.target.value as "all" | "specific")}
