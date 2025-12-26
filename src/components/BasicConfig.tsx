@@ -1,16 +1,21 @@
-import { Button, Card, DatePicker, Input, Radio, Space, Divider } from "antd";
+import { Button, Card, DatePicker, Radio, Space, Divider, Select, Typography } from "antd";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
+import type { AuthorAlias } from "../types";
 
 const { RangePicker } = DatePicker;
+const { Text } = Typography;
 
 interface BasicConfigProps {
   dateRange: [Dayjs, Dayjs];
   setDateRange: (dates: [Dayjs, Dayjs]) => void;
   authorMode: "all" | "specific";
   setAuthorMode: (mode: "all" | "specific") => void;
-  specificAuthor: string;
-  setSpecificAuthor: (author: string) => void;
+  includeAuthors: string[];
+  setIncludeAuthors: (authors: string[]) => void;
+  excludeAuthors: string[];
+  setExcludeAuthors: (authors: string[]) => void;
+  authorAliases: AuthorAlias[];
   startAnalysis: () => void;
   loading: boolean;
 }
@@ -20,8 +25,11 @@ export function BasicConfig({
   setDateRange,
   authorMode,
   setAuthorMode,
-  specificAuthor,
-  setSpecificAuthor,
+  includeAuthors,
+  setIncludeAuthors,
+  excludeAuthors,
+  setExcludeAuthors,
+  authorAliases,
   startAnalysis,
   loading,
 }: BasicConfigProps) {
@@ -52,6 +60,11 @@ export function BasicConfig({
     }
     setDateRange([start, end]);
   };
+
+  const authorOptions = authorAliases.map(a => ({
+    label: `${a.alias} (${a.original})`,
+    value: a.original
+  }));
 
   return (
     <div className="tab-content">
@@ -99,11 +112,32 @@ export function BasicConfig({
                 <Radio value="specific">指定用户</Radio>
               </Radio.Group>
               {authorMode === "specific" && (
-                <Input
-                  placeholder="请输入作者姓名 (支持模糊匹配)"
-                  value={specificAuthor}
-                  onChange={(e) => setSpecificAuthor(e.target.value)}
-                />
+                <Space orientation="vertical" style={{ width: "100%", marginTop: 8 }}>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>包含用户 (留空则包含所有)</Text>
+                    <Select
+                      mode="tags"
+                      style={{ width: '100%' }}
+                      placeholder="输入或选择要包含的用户"
+                      value={includeAuthors}
+                      onChange={setIncludeAuthors}
+                      options={authorOptions}
+                      allowClear
+                    />
+                  </div>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>排除用户</Text>
+                    <Select
+                      mode="tags"
+                      style={{ width: '100%' }}
+                      placeholder="输入或选择要排除的用户"
+                      value={excludeAuthors}
+                      onChange={setExcludeAuthors}
+                      options={authorOptions}
+                      allowClear
+                    />
+                  </div>
+                </Space>
               )}
             </Space>
           </div>

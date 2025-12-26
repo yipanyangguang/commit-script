@@ -174,7 +174,8 @@ function App() {
     dayjs().endOf("week").add(1, "day"), // Sunday
   ]);
   const [authorMode, setAuthorMode] = useState<"all" | "specific">("all");
-  const [specificAuthor, setSpecificAuthor] = useState("");
+  const [includeAuthors, setIncludeAuthors] = useState<string[]>([]);
+  const [excludeAuthors, setExcludeAuthors] = useState<string[]>([]);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [checkingGroupId, setCheckingGroupId] = useState<string | null>(null);
@@ -340,8 +341,8 @@ function App() {
       message.error("请选择时间范围。");
       return;
     }
-    if (authorMode === "specific" && !specificAuthor.trim()) {
-      message.error("请输入作者姓名。");
+    if (authorMode === "specific" && includeAuthors.length === 0 && excludeAuthors.length === 0) {
+      message.error("请至少指定一个包含或排除的作者。");
       return;
     }
 
@@ -397,9 +398,28 @@ function App() {
 
       let filtered = result;
       if (authorMode === "specific") {
-        filtered = result.filter((c: CommitInfo) =>
-          c.author.toLowerCase().includes(specificAuthor.toLowerCase())
-        );
+        filtered = result.filter((c: CommitInfo) => {
+          const authorLower = c.author.toLowerCase();
+          
+          // 1. Check Include (OR logic)
+          // If include list is empty, default to include all (unless excluded)
+          let isIncluded = true;
+          if (includeAuthors.length > 0) {
+            isIncluded = includeAuthors.some(keyword => 
+              authorLower.includes(keyword.toLowerCase())
+            );
+          }
+
+          // 2. Check Exclude (OR logic)
+          let isExcluded = false;
+          if (excludeAuthors.length > 0) {
+            isExcluded = excludeAuthors.some(keyword => 
+              authorLower.includes(keyword.toLowerCase())
+            );
+          }
+
+          return isIncluded && !isExcluded;
+        });
       }
 
       setCommits(filtered);
@@ -478,8 +498,11 @@ function App() {
           setDateRange={setDateRange}
           authorMode={authorMode}
           setAuthorMode={setAuthorMode}
-          specificAuthor={specificAuthor}
-          setSpecificAuthor={setSpecificAuthor}
+          includeAuthors={includeAuthors}
+          setIncludeAuthors={setIncludeAuthors}
+          excludeAuthors={excludeAuthors}
+          setExcludeAuthors={setExcludeAuthors}
+          authorAliases={authorAliases}
           startAnalysis={startAnalysis}
           loading={loading}
         />
