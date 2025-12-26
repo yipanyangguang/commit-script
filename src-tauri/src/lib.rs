@@ -358,6 +358,9 @@ async fn export_report(commits: Vec<CommitInfo>, export_path: String, start_date
 
 #[tauri::command]
 async fn get_commit_diff(repo_path: String, hash: String) -> Result<String, String> {
+    // Limit diff size to 1MB to prevent UI freeze
+    const MAX_DIFF_SIZE: usize = 1024 * 1024; 
+
     let output = Command::new("git")
         .args(&["show", &hash])
         .current_dir(&repo_path)
@@ -368,7 +371,59 @@ async fn get_commit_diff(repo_path: String, hash: String) -> Result<String, Stri
         return Err(format!("Git show failed: {}", String::from_utf8_lossy(&output.stderr)));
     }
 
+    if output.stdout.len() > MAX_DIFF_SIZE {
+        return Ok("DIFF_TOO_LARGE".to_string());
+    }
+
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+#[tauri::command]
+async fn open_file(repo_path: String, file_path: String, editor: Option<String>) -> Result<(), String> {
+    let full_path = Path::new(&repo_path).join(file_path);
+    
+    if let Some(editor_cmd) = editor {
+        if !editor_cmd.is_empty() {
+            #[cfg(target_os = "macos")]
+            if editor_cmd.ends_with(".app") {
+                Command::new("open")
+                    .arg("-a")
+                    .arg(&editor_cmd)
+                    .arg(&full_path)
+                    .spawn()
+                    .map_err(|e| format!("Failed to open with custom editor (.app): {}", e))?;
+                return Ok(());
+            }
+
+            Command::new(editor_cmd)
+                .arg(&full_path)
+                .spawn()
+                .map_err(|e| format!("Failed to open with custom editor: {}", e))?;
+            return Ok(());
+        }
+    }
+
+    // Try to open with VS Code first
+    let status = Command::new("code")
+        .arg(&full_path)
+        .status();
+
+    // If VS Code failed or not found, try system default
+    if status.is_err() || !status.unwrap().success() {
+        #[cfg(target_os = "macos")]
+        let cmd = "open";
+        #[cfg(target_os = "windows")]
+        let cmd = "start";
+        #[cfg(target_os = "linux")]
+        let cmd = "xdg-open";
+
+        Command::new(cmd)
+            .arg(&full_path)
+            .spawn()
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+    }
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -389,7 +444,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch, git_check_updates, git_get_remote_url, get_commit_diff])
+        .invoke_handler(tauri::generate_handler![check_git_repo, get_commits, export_report, git_fetch, git_check_updates, git_get_remote_url, get_commit_diff, open_file])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

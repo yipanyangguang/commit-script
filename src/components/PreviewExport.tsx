@@ -1,11 +1,13 @@
-import { Button, Select, Space, Table, Modal, Tooltip, message } from "antd";
+import { Button, Select, Space, Table, Modal, Tooltip, message, Collapse, List } from "antd";
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
-import { GlobalOutlined } from "@ant-design/icons";
+import { GlobalOutlined, CodeOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import * as Diff2Html from 'diff2html';
 import 'diff2html/bundles/css/diff2html.min.css';
 import type { CommitInfo, AuthorAlias, RepoGroup } from "../types";
+
+const { Panel } = Collapse;
 
 interface PreviewExportProps {
   commits: CommitInfo[];
@@ -16,6 +18,8 @@ interface PreviewExportProps {
   exportReport: () => void;
   authorAliases?: AuthorAlias[];
   repoGroups?: RepoGroup[];
+  editorSettings?: { type: 'custom' | 'vscode' | 'system'; path?: string };
+  setEditorSettings?: (settings: { type: 'custom' | 'vscode' | 'system'; path?: string }) => void;
 }
 
 export function PreviewExport({
@@ -27,12 +31,15 @@ export function PreviewExport({
   exportReport,
   authorAliases = [],
   repoGroups = [],
+  editorSettings,
+  setEditorSettings,
 }: PreviewExportProps) {
   const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null);
   const [diffModalVisible, setDiffModalVisible] = useState(false);
   const [diffContent, setDiffContent] = useState("");
   const [diffLoading, setDiffLoading] = useState(false);
   const [currentDiffCommit, setCurrentDiffCommit] = useState<CommitInfo | null>(null);
+  const [changedFiles, setChangedFiles] = useState<string[]>([]);
 
   const getAuthorDisplay = (authorName: string) => {
     const alias = authorAliases.find(
@@ -46,6 +53,7 @@ export function PreviewExport({
     setDiffModalVisible(true);
     setDiffLoading(true);
     setDiffContent("");
+    setChangedFiles([]);
 
     try {
       // Find the full path of the repo
@@ -68,7 +76,22 @@ export function PreviewExport({
         repoPath,
         hash: commit.hash,
       });
-      setDiffContent(diff);
+      
+      if (diff === "DIFF_TOO_LARGE") {
+        setDiffContent("DIFF_TOO_LARGE");
+      } else {
+        setDiffContent(diff);
+        // Parse changed files
+        const files: string[] = [];
+        const regex = /^diff --git a\/(.*) b\/(.*)$/gm;
+        let match;
+        while ((match = regex.exec(diff)) !== null) {
+          if (match[2]) {
+            files.push(match[2]);
+          }
+        }
+        setChangedFiles(files);
+      }
     } catch (e) {
       console.error("Failed to get diff:", e);
       message.error(`获取变更失败: ${e}`);
@@ -76,6 +99,74 @@ export function PreviewExport({
     } finally {
       setDiffLoading(false);
     }
+  };
+
+  const handleOpenFile = (filePath: string) => {
+    if (!currentDiffCommit) return;
+
+    const doOpen = async (editorType: string, editorPath?: string) => {
+      try {
+        let repoPath = "";
+        for (const group of repoGroups) {
+          const repo = group.repos.find(r => r.path.endsWith(currentDiffCommit.repo_name) || r.path.split(/[/\\]/).pop() === currentDiffCommit.repo_name);
+          if (repo) {
+            repoPath = repo.path;
+            break;
+          }
+        }
+
+        if (repoPath) {
+          let editorCmd: string | undefined = undefined;
+          if (editorType === 'custom' && editorPath) {
+            editorCmd = editorPath;
+          } else if (editorType === 'vscode') {
+            editorCmd = 'code';
+          }
+          // If 'system', editorCmd remains undefined, backend handles it
+
+          await invoke("open_file", { repoPath, filePath, editor: editorCmd });
+        }
+      } catch (e) {
+        message.error(`打开文件失败: ${e}`);
+      }
+    };
+
+    // If editor settings not configured or default (vscode but maybe user wants to change), 
+    // actually we just use what's in settings. 
+    // But user said: "First time let choose". 
+    // We can check if it's the "default" state which might be unconfigured.
+    // However, we initialized it to 'vscode' in App.tsx.
+    // Let's assume if user hasn't explicitly visited settings, they might want to choose.
+    // But simpler logic: Just confirm and show what will be used.
+
+    let editorName = "系统默认编辑器";
+    if (editorSettings?.type === 'vscode') editorName = "VS Code";
+    if (editorSettings?.type === 'custom') editorName = `自定义编辑器 (${editorSettings.path})`;
+
+    Modal.confirm({
+      title: '确认打开文件',
+      content: (
+        <div>
+          <p>即将使用 <strong>{editorName}</strong> 打开文件：</p>
+          <p style={{ fontWeight: 'bold' }}>{filePath}</p>
+          <p style={{ color: '#faad14', marginTop: 10 }}>
+            ⚠️ 请注意：请确保本地仓库已切换到对应的分支或版本，否则打开的可能不是提交时的代码状态。
+          </p>
+          <div style={{ marginTop: 10 }}>
+            <Button size="small" type="link" onClick={() => {
+              Modal.destroyAll();
+              // Navigate to settings tab? 
+              // We can't easily navigate tabs from here without context, 
+              // but we can show a message or just let them know where to change.
+              message.info("请前往“配置”页面修改默认编辑器设置");
+            }}>
+              修改默认编辑器
+            </Button>
+          </div>
+        </div>
+      ),
+      onOk: () => doOpen(editorSettings?.type || 'system', editorSettings?.path)
+    });
   };
 
   const getRemoteUrl = (repoName: string) => {
@@ -303,7 +394,26 @@ export function PreviewExport({
       </Modal>
 
       <Modal
-        title={`变更详情 - ${currentDiffCommit?.hash.substring(0, 7)}`}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginRight: 30 }}>
+            <span>变更详情 - {currentDiffCommit?.hash.substring(0, 7)}</span>
+            {currentDiffCommit && (
+              <Space>
+                {getRemoteUrl(currentDiffCommit.repo_name) && (
+                  <Tooltip title="在浏览器中打开 Commit">
+                    <Button 
+                      type="text" 
+                      icon={<GlobalOutlined />} 
+                      onClick={() => openCommitUrl(currentDiffCommit.repo_name, currentDiffCommit.hash)}
+                    >
+                      浏览器打开
+                    </Button>
+                  </Tooltip>
+                )}
+              </Space>
+            )}
+          </div>
+        }
         open={diffModalVisible}
         onCancel={() => setDiffModalVisible(false)}
         footer={null}
@@ -315,23 +425,71 @@ export function PreviewExport({
         <div
           style={{
             height: "85vh",
-            overflow: "auto",
-            position: "relative",
-            padding: "16px",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
           {diffLoading ? (
             <div style={{ padding: 20, textAlign: "center" }}>加载中...</div>
+          ) : diffContent === "DIFF_TOO_LARGE" ? (
+            <div style={{ padding: 40, textAlign: "center", color: "#faad14" }}>
+              <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>
+                ⚠️ 变更内容过大
+              </div>
+              <div>
+                为了防止页面卡死，已隐藏详细变更内容。请在命令行或 IDE 中查看。
+              </div>
+            </div>
           ) : (
-            <div
-              dangerouslySetInnerHTML={{
-                __html: Diff2Html.html(diffContent, {
-                  drawFileList: true,
-                  matching: "lines",
-                  outputFormat: "side-by-side",
-                }),
-              }}
-            />
+            <>
+              {changedFiles.length > 0 && (
+                <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+                  <Collapse ghost size="small">
+                    <Panel header={`变更文件列表 (${changedFiles.length})`} key="1">
+                      <List
+                        size="small"
+                        dataSource={changedFiles}
+                        renderItem={(file) => (
+                          <List.Item
+                            actions={[
+                              <Button 
+                                type="link" 
+                                size="small" 
+                                icon={<CodeOutlined />}
+                                onClick={() => handleOpenFile(file)}
+                              >
+                                本地打开
+                              </Button>
+                            ]}
+                          >
+                            <Space>
+                              <FolderOpenOutlined />
+                              <span style={{ fontFamily: 'monospace' }}>{file}</span>
+                            </Space>
+                          </List.Item>
+                        )}
+                        style={{ maxHeight: 150, overflowY: 'auto' }}
+                      />
+                    </Panel>
+                  </Collapse>
+                </div>
+              )}
+              <div
+                style={{
+                  flex: 1,
+                  overflow: "auto",
+                  position: "relative",
+                  padding: "16px",
+                }}
+                dangerouslySetInnerHTML={{
+                  __html: Diff2Html.html(diffContent, {
+                    drawFileList: false, // We render our own file list
+                    matching: "lines",
+                    outputFormat: "side-by-side",
+                  }),
+                }}
+              />
+            </>
           )}
         </div>
       </Modal>

@@ -13,7 +13,7 @@ dayjs.locale("zh-cn");
 
 import { RepoConfig } from "./components/RepoConfig";
 import { BasicConfig } from "./components/BasicConfig";
-import { AliasConfig } from "./components/AliasConfig";
+import { Settings } from "./components/Settings";
 import { PreviewExport } from "./components/PreviewExport";
 import { Dashboard } from "./components/Dashboard";
 import { About } from "./components/About";
@@ -97,6 +97,22 @@ function App() {
   useEffect(() => {
     localStorage.setItem("authorAliases", JSON.stringify(authorAliases));
   }, [authorAliases]);
+
+  const [editorSettings, setEditorSettings] = useState<{ type: 'custom' | 'vscode' | 'system'; path?: string }>(() => {
+    const saved = localStorage.getItem("editorSettings");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse editorSettings", e);
+      }
+    }
+    return { type: 'vscode' };
+  });
+
+  useEffect(() => {
+    localStorage.setItem("editorSettings", JSON.stringify(editorSettings));
+  }, [editorSettings]);
 
   async function checkGroupStatus(groupId: string) {
     if (checkingGroupId) return;
@@ -532,14 +548,21 @@ function App() {
           exportReport={exportReport}
           authorAliases={authorAliases}
           repoGroups={repoGroups}
+          editorSettings={editorSettings}
+          setEditorSettings={setEditorSettings}
         />
       ),
     },
     {
       key: "5",
-      label: "别名配置",
+      label: "配置",
       children: (
-        <AliasConfig aliases={authorAliases} setAliases={setAuthorAliases} />
+        <Settings 
+          aliases={authorAliases} 
+          setAliases={setAuthorAliases} 
+          editorSettings={editorSettings}
+          setEditorSettings={setEditorSettings}
+        />
       ),
     },
     {
